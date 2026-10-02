@@ -1,0 +1,35 @@
+{
+  "id": "gh-13",
+  "source": "github-issue",
+  "team": "Tùng",
+  "task": "vilexnorm",
+  "split": "test",
+  "submitted_at": "2026-10-02T17:12:50Z",
+  "file_name": "submission.csv",
+  "file_sha256": "b18c92f8dd09c3ac45eeffa4063be501a6c7d18f98bbfb357741c765162f4b10",
+  "valid": true,
+  "score": 0.32311415893505446,
+  "metric_name": "Error Reduction Rate (ERR)",
+  "secondary_metrics": {
+    "Token Accuracy": 0.8802796803652968,
+    "Normalization Precision": 0.6340057636887608,
+    "Normalization Recall": 0.7333333333333333
+  },
+  "stats": {
+    "expected_samples": 1044,
+    "submitted_samples": 1044,
+    "valid_samples": 1044,
+    "missing_id_values": 0,
+    "duplicate_ids": 0,
+    "missing_ids": 0,
+    "unknown_ids": 0,
+    "missing_predictions": 0,
+    "invalid_labels": 0
+  },
+  "errors": [],
+  "warnings": [],
+  "github_login": "tung51652-alt",
+  "issue_number": 13,
+  "issue_url": "https://github.com/tung51652-alt/Ch-m-i-m-OAI/issues/13",
+  "note": ""
+}
