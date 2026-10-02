@@ -127,7 +127,7 @@ function request(path, init = {}) {
 function environment(db) {
   return {
     CHAT_DB: db,
-    HF_TOKEN: "hf_test",
+    OPENROUTER_API_KEY: "sk-or-test",
     SESSION_SIGNING_KEY: "a-secure-session-signing-key-for-worker-tests",
     ALLOWED_ORIGINS: "https://example.github.io",
     PRACTICE_MODE: "true",
@@ -168,7 +168,9 @@ test("practice session streams a response and settles quota from provider usage"
   const originalFetch = globalThis.fetch;
   let providerBody;
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, "https://router.huggingface.co/v1/chat/completions");
+    assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+    assert.equal(init.headers.Authorization, "Bearer sk-or-test");
+    assert.equal(init.headers["HTTP-Referer"], "https://tung51652-alt.github.io/Ch-m-i-m-OAI/");
     providerBody = JSON.parse(init.body);
     const sse = [
       "data: {\"choices\":[{\"delta\":{\"content\":\"Xin chào\"}}]}\n\n",

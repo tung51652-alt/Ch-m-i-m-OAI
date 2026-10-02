@@ -1,4 +1,4 @@
-export const DEFAULT_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai";
+export const DEFAULT_MODEL = "deepseek/deepseek-r1-distill-qwen-32b:free";
 export const DEFAULT_SESSION_TOKEN_LIMIT = 2000;
 export const DEFAULT_TURN_TOKEN_LIMIT = 768;
 export const DEFAULT_SESSION_TTL_SECONDS = 3 * 60 * 60;

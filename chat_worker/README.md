@@ -1,6 +1,6 @@
 # OAI T7 Chat Worker
 
-Backend serverless cho trang `site/chat.html`. Worker giữ Hugging Face token, stream phản hồi và dùng D1 để áp giới hạn token theo phiên. Nội dung câu hỏi và câu trả lời không được ghi vào D1.
+Backend serverless cho trang `site/chat.html`. Worker giữ OpenRouter API key, stream phản hồi và dùng D1 để áp giới hạn token theo phiên. Nội dung câu hỏi và câu trả lời không được ghi vào D1.
 
 ## Thiết lập Cloudflare
 
@@ -19,10 +19,10 @@ Chép `database_id` từ lệnh trên vào `wrangler.toml`, sau đó chạy migr
 npx wrangler d1 migrations apply oai-t7-chat --remote
 ```
 
-Tạo ba secret khác nhau. `HF_TOKEN` cần quyền gọi Hugging Face Inference Providers:
+Tạo OpenRouter API key trong tài khoản OpenRouter, sau đó nhập an toàn tại prompt của Wrangler. Không gửi key vào chat, không commit vào Git và không đưa vào frontend:
 
 ```bash
-npx wrangler secret put HF_TOKEN
+npx wrangler secret put OPENROUTER_API_KEY
 npx wrangler secret put SESSION_SIGNING_KEY
 npx wrangler secret put ADMIN_KEY
 ```
@@ -88,9 +88,11 @@ Practice mode không yêu cầu ticket và không phù hợp cho thi thật.
 - `TURN_TOKEN_LIMIT`: số completion token tối đa một lượt, mặc định `768`.
 - `SESSION_TTL_SECONDS`: thời lượng session, mặc định 3 giờ.
 - `PROVIDER_TIMEOUT_MS`: timeout toàn bộ lượt stream, mặc định 90 giây.
-- `HF_MODEL`: model Hugging Face đầy đủ kèm provider.
+- `OPENROUTER_MODEL`: model OpenRouter; mặc định `deepseek/deepseek-r1-distill-qwen-32b:free`.
 - `PRACTICE_MODE`: phải là `false` ở production.
 
 Khi provider không trả usage cuối stream, Worker tính toàn bộ reservation của lượt đó để tránh vượt quota. Mỗi session chỉ được có một request đang chạy.
 
 Mỗi session có quota độc lập. Endpoint `POST /api/session/new` chỉ cấp session kế tiếp khi session đã xác thực dùng hết token; ticket bị khóa hoặc hết hạn không thể tạo thêm session. Các session cũ vẫn được giữ trong D1 để kiểm toán.
+
+OpenRouter free endpoint không có giá theo token nhưng bị giới hạn theo request/ngày và năng lực provider có thể thay đổi. Nếu endpoint trả 429, Worker nhả phần quota đã giữ trước đó để người dùng thử lại.
