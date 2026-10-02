@@ -1,0 +1,31 @@
+{
+  "id": "gh-3",
+  "source": "github-issue",
+  "team": "Thanh",
+  "task": "nlp",
+  "split": "public",
+  "submitted_at": "2026-10-02T06:09:35Z",
+  "file_name": "sample_submission.csv",
+  "file_sha256": "44ba37cd6fc47e085dd7775d26e553c5db1593ec89a66a640904cfe8a05ba430",
+  "valid": true,
+  "score": 0.213306887847097,
+  "metric_name": "Macro F1",
+  "secondary_metrics": null,
+  "stats": {
+    "expected_samples": 1590,
+    "submitted_samples": 1590,
+    "valid_samples": 1590,
+    "missing_id_values": 0,
+    "duplicate_ids": 0,
+    "missing_ids": 0,
+    "unknown_ids": 0,
+    "missing_predictions": 0,
+    "invalid_labels": 0
+  },
+  "errors": [],
+  "warnings": [],
+  "github_login": "Thanh25082005",
+  "issue_number": 3,
+  "issue_url": "https://github.com/tung51652-alt/Ch-m-i-m-OAI/issues/3",
+  "note": "Nộp từ trang github.io · file sample_submission.csv · Macro F1 dự kiến 0.213307"
+}
