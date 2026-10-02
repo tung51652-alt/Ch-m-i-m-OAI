@@ -16,7 +16,7 @@ import {
   verifySessionToken,
 } from "./core.mjs";
 
-const OPENROUTER_CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const HF_CHAT_ENDPOINT = "https://router.huggingface.co/v1/chat/completions";
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 const TICKET_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SESSION_COLUMNS = "id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at";
@@ -295,7 +295,7 @@ function auditedProviderStream(upstream, { db, sessionId, reservation, abortCont
 }
 
 async function chat(request, env) {
-  if (!env.OPENROUTER_API_KEY) throw new Error("Thiếu secret OPENROUTER_API_KEY.");
+  if (!env.HF_TOKEN) throw new Error("Thiếu secret HF_TOKEN.");
   const db = requireDatabase(env);
   const session = await loadAuthorizedSession(request, env);
   const body = await readJson(request);
@@ -317,17 +317,15 @@ async function chat(request, env) {
   const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
   let upstream;
   try {
-    upstream = await fetch(OPENROUTER_CHAT_ENDPOINT, {
+    upstream = await fetch(HF_CHAT_ENDPOINT, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${env.HF_TOKEN}`,
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        "HTTP-Referer": "https://tung51652-alt.github.io/Ch-m-i-m-OAI/",
-        "X-Title": "OAI T7 Chat",
       },
       body: JSON.stringify(providerRequest(messages, {
-        model: env.OPENROUTER_MODEL || DEFAULT_MODEL,
+        model: env.HF_MODEL || DEFAULT_MODEL,
         maxTokens: reservation,
       })),
       signal: abortController.signal,
@@ -418,7 +416,7 @@ async function createTickets(request, env) {
 async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") {
-    return responseJson({ ok: true, service: "oai-chat", configured: Boolean(env.OPENROUTER_API_KEY && env.SESSION_SIGNING_KEY && env.CHAT_DB) });
+    return responseJson({ ok: true, service: "oai-chat", configured: Boolean(env.HF_TOKEN && env.SESSION_SIGNING_KEY && env.CHAT_DB) });
   }
   if (request.method === "POST" && url.pathname === "/api/session") return openSession(request, env);
   if (request.method === "GET" && url.pathname === "/api/session") return getSession(request, env);
