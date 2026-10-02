@@ -67,6 +67,12 @@ test("usage collector handles fragmented SSE and records generated content", () 
   assert.deepEqual(collector.finish(), { completionTokens: 42, sawContent: true });
 });
 
+test("usage collector treats provider reasoning fields as generated output", () => {
+  const collector = createUsageCollector();
+  collector.push("data: {\"choices\":[{\"delta\":{\"reasoning\":\"thinking\"}}]}\n\n");
+  assert.deepEqual(collector.finish(), { completionTokens: null, sawContent: true });
+});
+
 test("session quota subtracts an in-flight reservation", () => {
   assert.deepEqual(sessionView({
     token_limit: 2000,

@@ -176,7 +176,11 @@ export function createUsageCollector() {
       const chunk = JSON.parse(data);
       const usage = Number(chunk?.usage?.completion_tokens);
       if (Number.isInteger(usage) && usage >= 0) completionTokens = usage;
-      if (chunk?.choices?.some((choice) => typeof choice?.delta?.content === "string" && choice.delta.content.length > 0)) {
+      if (chunk?.choices?.some((choice) => {
+        const delta = choice?.delta || {};
+        return [delta.content, delta.reasoning_content, delta.reasoning]
+          .some((value) => typeof value === "string" && value.length > 0);
+      })) {
         sawContent = true;
       }
     } catch (error) {
