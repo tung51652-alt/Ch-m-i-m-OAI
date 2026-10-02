@@ -341,15 +341,6 @@ async function chat(request, env) {
     abortController.abort();
     await releaseReservation(db, session.id);
     const retryAfter = upstream.headers.get("Retry-After");
-    const errorText = await upstream.text().catch(() => "");
-    let providerErrorCode = "";
-    try {
-      const payload = JSON.parse(errorText);
-      providerErrorCode = payload?.error?.code || payload?.error?.type || "";
-    } catch (error) {
-      // Do not log provider text because an error response may echo prompt content.
-    }
-    console.error("OpenRouter request rejected", upstream.status, String(providerErrorCode).slice(0, 80));
     return responseJson(
       { ok: false, message: upstream.status === 429 ? "Dịch vụ mô hình đang giới hạn lượt gọi. Vui lòng thử lại sau." : "Dịch vụ mô hình tạm thời không sẵn sàng." },
       upstream.status === 429 ? 429 : 502,
