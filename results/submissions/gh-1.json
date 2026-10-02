@@ -1,0 +1,31 @@
+{
+  "id": "gh-1",
+  "source": "github-issue",
+  "team": "Thanh",
+  "task": "cv",
+  "split": "public",
+  "submitted_at": "2026-10-02T05:08:46Z",
+  "file_name": "output.csv",
+  "file_sha256": "3799d21322d1ae601de74c7b5219c0400c2bf9631822006ccf5a32533243f2df",
+  "valid": true,
+  "score": 0.07243738276508882,
+  "metric_name": "Macro F1",
+  "secondary_metrics": null,
+  "stats": {
+    "expected_samples": 2715,
+    "submitted_samples": 2715,
+    "valid_samples": 2715,
+    "missing_id_values": 0,
+    "duplicate_ids": 0,
+    "missing_ids": 0,
+    "unknown_ids": 0,
+    "missing_predictions": 0,
+    "invalid_labels": 0
+  },
+  "errors": [],
+  "warnings": [],
+  "github_login": "Thanh25082005",
+  "issue_number": 1,
+  "issue_url": "https://github.com/tung51652-alt/Ch-m-i-m-OAI/issues/1",
+  "note": "Kiểm tra CI/CD (bài nộp thử, sẽ xóa)"
+}
