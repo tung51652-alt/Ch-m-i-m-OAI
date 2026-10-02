@@ -1,8 +1,10 @@
 """Tests for submission history, ranking and the GitHub Issue grader (synthetic data only)."""
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
 from datetime import datetime, timezone
+import gzip
 import json
 from pathlib import Path
 import sys
@@ -239,6 +241,34 @@ class GradeIssueTests(unittest.TestCase):
         block = template.split("id: team", 1)[1].split("validations:", 1)[0]
         options = [line.strip().strip("- ").strip('"') for line in block.splitlines() if line.strip().startswith("- ")]
         self.assertEqual(options, team_names())
+
+    def pred_code(self, pred, task="cv", split="public", labels=None):
+        payload = {"v": 1, "task": task, "split": split, "file_name": "output.csv",
+                   "labels": labels or ["a", "b", "c"], "pred": pred}
+        return "oai-pred:v1:" + base64.b64encode(gzip.compress(json.dumps(payload).encode())).decode()
+
+    def test_inline_prediction_code_is_regraded(self) -> None:
+        # truth labels are a,b,c,a,b,c -> indices 0,1,2,0,1,2
+        perfect = self.pred_code("012012")
+        body = self.body(file="").replace("### File submission", f"### Dự đoán\n\n```\n{perfect}\n```\n\n### File submission")
+        status, comment = self.run_issue(body, data=b"never downloaded")
+        self.assertEqual(status, "graded")
+        self.assertIn("1.000000", comment)
+        half = self.pred_code("000000")
+        status, _ = self.run_issue(body.replace(perfect, half), number=21)
+        self.assertEqual(status, "graded")
+        by_id = {r["id"]: r for r in load_records(self.results)}
+        self.assertEqual(by_id["gh-7"]["score"], 1.0)
+        self.assertEqual(by_id["gh-7"]["file_name"], "output.csv")
+        self.assertLess(by_id["gh-21"]["score"], 1.0)
+
+    def test_tampered_prediction_code_is_rejected(self) -> None:
+        for code, needle in [(self.pred_code("012"), "cần 6"), (self.pred_code("012012", split="private"), "không khớp"),
+                             (self.pred_code("0120z2"), "nhãn không hợp lệ"), ("oai-pred:v1:AAAA", "bị lỗi")]:
+            body = self.body(file="").replace("### File submission", f"### Dự đoán\n\n{code}\n\n### File submission")
+            status, comment = self.run_issue(body)
+            self.assertEqual(status, "invalid", code)
+            self.assertIn(needle, comment)
 
     def test_missing_ground_truth_is_system_error_not_recorded(self) -> None:
         missing = replace(scoring.TASKS["nlp"], organizer_dir=Path(self.tmp.name) / "missing")

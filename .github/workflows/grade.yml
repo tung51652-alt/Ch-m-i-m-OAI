@@ -18,7 +18,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.issue.labels.*.name, 'submission') ||
-      contains(github.event.issue.body, '### File submission')
+      contains(github.event.issue.body, '### File submission') ||
+      contains(github.event.issue.body, 'oai-pred:v1:')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

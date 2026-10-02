@@ -9,6 +9,9 @@ Outputs (``$GITHUB_OUTPUT``): ``status`` = graded | invalid | rejected | error.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import gzip
 from hashlib import sha256
 from io import BytesIO
 import json
@@ -20,6 +23,8 @@ from typing import Any
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -38,7 +43,13 @@ from leaderboard import (  # noqa: E402
     task_splits,
     utc_now,
 )
-from scoring import SubmissionReadError, get_task_config, grade_submission, read_submission  # noqa: E402
+from scoring import (  # noqa: E402
+    SubmissionReadError,
+    get_task_config,
+    grade_submission,
+    load_ground_truth,
+    read_submission,
+)
 
 
 MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
@@ -52,6 +63,8 @@ SPLIT_OPTIONS = {
     "Private Test": "private",
     "Test Set (ViLexNorm)": "test",
 }
+PRED_RE = re.compile(r"oai-pred:v1:([A-Za-z0-9+/=]+)")
+MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 ATTACHMENT_RE = re.compile(r"https://(?:github\.com|gist\.githubusercontent\.com)/[^\s)\]>\"']+")
 
 
@@ -123,6 +136,36 @@ def find_attachment(text: str, repository: str) -> tuple[str, str]:
     if len(candidates) > 1:
         raise SubmissionProblem("Issue có nhiều hơn một file đính kèm; mỗi issue chỉ được nộp một file.")
     return candidates[0]
+
+
+def decode_prediction(text: str, task: str, split: str):
+    """Rebuild a submission from the page's "oai-pred:v1:" code (see site/grader.js encodePrediction).
+
+    Returns (DataFrame, file name, raw code bytes), or None when the issue has no such code.
+    The predictions are aligned to the ground-truth ID order, one base-36 label index per row.
+    """
+    match = PRED_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        raw = base64.b64decode(match.group(1), validate=True)
+        with gzip.GzipFile(fileobj=BytesIO(raw)) as handle:
+            payload = json.loads(handle.read(MAX_PAYLOAD_BYTES))
+        labels, pred = payload["labels"], payload["pred"]
+    except (binascii.Error, OSError, ValueError, KeyError, TypeError) as exc:
+        raise SubmissionProblem("Mã dự đoán trong issue bị lỗi; hãy chấm và bấm Lưu lại trên trang.") from exc
+    if payload.get("task") != task or payload.get("split") != split:
+        raise SubmissionProblem("Mã dự đoán không khớp tác vụ/tập đánh giá đã chọn.")
+    config = get_task_config(task)
+    ids = load_ground_truth(task, split)[config.id_col].astype(str).tolist()
+    if not isinstance(pred, str) or len(pred) != len(ids):
+        raise SubmissionProblem(f"Mã dự đoán có {len(pred) if isinstance(pred, str) else 0:,} dòng, cần {len(ids):,}.")
+    try:
+        values = [str(labels[int(ch, 36)]) for ch in pred]
+    except (ValueError, IndexError, TypeError) as exc:
+        raise SubmissionProblem("Mã dự đoán chứa nhãn không hợp lệ.") from exc
+    frame = pd.DataFrame({config.id_col: ids, config.label_col: values}, dtype=str)
+    return frame, os.path.basename(str(payload.get("file_name") or "")) or "submission.csv", raw
 
 
 def download(url: str, token: str | None) -> bytes:
@@ -267,10 +310,15 @@ def grade_issue(event: dict[str, Any], *, repository: str, token: str | None, si
 
     file_name, digest, result, error = "", "", None, None
     try:
-        url, file_name = find_attachment(fields.get("File submission", ""), repository)
-        data = fetch(url, token)
+        # Issues opened from the website carry the predictions inline; form issues attach a file.
+        decoded = decode_prediction(fields.get("Dự đoán", ""), task, split)
+        if decoded:
+            submission_df, file_name, data = decoded
+        else:
+            url, file_name = find_attachment(fields.get("File submission", ""), repository)
+            data = fetch(url, token)
+            submission_df, _ = read_submission(NamedBytesIO(data, file_name))
         digest = sha256(data).hexdigest()
-        submission_df, _ = read_submission(NamedBytesIO(data, file_name))
         result = grade_submission(task, split, submission_df)
     except (SubmissionProblem, SubmissionReadError) as exc:
         error = str(exc)

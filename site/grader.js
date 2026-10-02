@@ -204,5 +204,27 @@
     return { ...validation, score: macroF1(truth.labels, yPred, labels), metric_name: "Macro F1" };
   }
 
-  window.OAIGrader = { SubmissionReadError, readSubmission, parseCsv, validate, grade, macroF1 };
+  // ---------- compact encoding for saving through a pre-filled GitHub issue ----------
+  const PRED_PREFIX = "oai-pred:v1:";
+
+  /**
+   * Encode a VALID submission as "oai-pred:v1:<base64(gzip(json))>". Predictions are stored in
+   * ground-truth ID order as one base-36 digit per row (index into the sorted label domain), so a
+   * full test set fits in an issue URL; scripts/grade_issue.py rebuilds the file and re-grades it.
+   */
+  async function encodePrediction(sub, truth, idCol, labelCol, meta) {
+    const labels = sortStr(new Set(truth.labels));
+    if (labels.length > 36) throw new Error("Quá nhiều nhãn để mã hóa.");
+    const index = new Map(labels.map((l, i) => [l, i]));
+    const lookup = new Map(sub.rows.map((r) => [String(r[idCol]), String(r[labelCol])]));
+    const pred = truth.ids.map((id) => index.get(lookup.get(id)).toString(36)).join("");
+    const json = JSON.stringify({ v: 1, ...meta, labels, pred });
+    const stream = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return PRED_PREFIX + btoa(binary);
+  }
+
+  window.OAIGrader = { SubmissionReadError, readSubmission, parseCsv, validate, grade, macroF1, encodePrediction };
 })();

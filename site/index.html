@@ -550,6 +550,23 @@
     return rows;
   }
 
+  // A blank issue (not the form template) so title and body can be pre-filled from the URL;
+  // grade.yml recognises it by the oai-pred marker and re-grades the decoded predictions.
+  function savingIssueUrl({ team, taskKey, split, fileName, score, code }) {
+    const repo = repoName();
+    if (!repo) return "#";
+    const task = data.tasks.find((t) => t.key === taskKey);
+    const body = [
+      "### Đội", "", team, "",
+      "### Tác vụ", "", ISSUE_TASK_LABEL[taskKey] || task.name, "",
+      "### Tập đánh giá", "", data.split_names[split], "",
+      "### Dự đoán", "", "```", code, "```", "",
+      "### Ghi chú", "", `Nộp từ trang github.io · file ${fileName} · ${task.metric} dự kiến ${fmt(score)}`,
+    ].join("\n");
+    const title = `[Submission] ${team} · ${task.name} · ${data.split_names[split]}`;
+    return `https://github.com/${repo}/issues/new?${new URLSearchParams({ title, body, labels: "submission" })}`;
+  }
+
   async function gradeInBrowser(team, taskKey, split, file) {
     const task = data.tasks.find((t) => t.key === taskKey);
     const truth = (data.ground_truth[taskKey] || {})[split];
@@ -576,12 +593,14 @@
     }
     const box = resultBox({ submission, standing });
     if (result.valid) {
+      const code = await OAIGrader.encodePrediction(sub, truth, idCol, labelCol, { task: taskKey, split, file_name: file.name });
+      const url = savingIssueUrl({ team, taskKey, split, fileName: file.name, score: result.score, code });
       box.append(el("div", { class: "save-box" },
-        el("div", {}, "Điểm và hạng ở trên là dự kiến, được chấm ngay trên trình duyệt và chưa được lưu. ",
-          "Để đưa lên bảng xếp hạng chung, mở form dưới đây (đã điền sẵn đội, tác vụ, tập) và kéo thả lại file."),
-        el("a", { class: "primary", target: "_blank", rel: "noopener",
-          href: issueUrl({ team, task: ISSUE_TASK_LABEL[taskKey] || "", split: data.split_names[split] }) },
-          "Lưu lên bảng xếp hạng")));
+        el("div", {}, "Điểm và hạng ở trên là dự kiến và chưa được lưu. Bấm nút dưới đây, GitHub mở sẵn một issue đã điền đủ đội, tác vụ, tập, ",
+          "dự đoán và ghi chú; chỉ cần bấm Create. Khoảng 1–2 phút sau kết quả chính thức có trên bảng xếp hạng."),
+        url.length > 7500
+          ? el("div", { class: "hint" }, "Dự đoán quá dài để gửi qua link; hãy dùng nút Mở form nộp bài trên GitHub và đính kèm file.")
+          : el("a", { class: "primary", target: "_blank", rel: "noopener", href: url }, "Lưu lên bảng xếp hạng")));
     }
     return box;
   }

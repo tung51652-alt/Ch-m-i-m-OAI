@@ -108,6 +108,8 @@ GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động nh�
 
 Trang github.io: <https://tung51652-alt.github.io/Ch-m-i-m-OAI/> (cần mật khẩu, giống bản local).
 
+Trên trang, bấm **Chấm điểm** là chấm ngay trong trình duyệt (`site/grader.js`, cùng logic với `scoring.py`; đáp án nằm trong dữ liệu đã mã hóa bằng mật khẩu). Bấm **Lưu lên bảng xếp hạng** để mở một issue đã điền sẵn đội, tác vụ, tập, ghi chú và mã dự đoán (`oai-pred:v1:…`, dự đoán nén theo thứ tự ID của đáp án); người nộp chỉ cần bấm **Create**. Actions giải mã, dựng lại file, chấm lại bằng `scoring.py` và lưu kết quả chính thức.
+
 Nộp từ dòng lệnh thay vì kéo thả file:
 
 ```bash
