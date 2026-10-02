@@ -150,3 +150,17 @@ python3 -m unittest discover -p "test_*.py"
 ```
 
 Test dùng dữ liệu tổng hợp, không cần đáp án thật; các test với đáp án thật tự bỏ qua khi máy không có dữ liệu.
+
+## 6. Trợ lý AI cho phiên thi
+
+Trang `chat.html` cung cấp giao diện chat tách khỏi grader để không làm nặng luồng chấm bài. Trình duyệt chỉ chạy HTML/CSS/JavaScript và giữ session token trong `sessionStorage`; nội dung hội thoại không được ghi vào localStorage hay database của website.
+
+Backend nằm trong `chat_worker/` và được thiết kế cho Cloudflare Worker + D1:
+
+- Hugging Face token và khóa ký session chỉ nằm trong Worker secrets.
+- Model mặc định là `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai` qua Hugging Face Router.
+- Mỗi ticket dùng một lần và gắn với một session có 2.000 completion token, bao gồm token suy luận.
+- D1 chỉ lưu hash ticket, session, quota và thời hạn; không lưu prompt hoặc câu trả lời.
+- Mỗi phiên chỉ chạy một lượt sinh tại một thời điểm và giữ trước quota để tránh vượt giới hạn khi mở nhiều tab.
+
+Xem hướng dẫn deploy, tạo ticket và chạy local tại [`chat_worker/README.md`](chat_worker/README.md).
