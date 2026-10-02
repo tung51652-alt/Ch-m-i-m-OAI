@@ -28,5 +28,8 @@ jobs:
       - name: Browser grader tests
         run: node --test test_grader.js
 
+      - name: Chat frontend and Worker tests
+        run: node --test test_chat.js chat_worker/test/*.test.mjs
+
       - name: Build site
         run: python scripts/build_site.py --out "${RUNNER_TEMP}/_site"

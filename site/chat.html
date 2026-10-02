@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https: http://localhost:* http://127.0.0.1:*; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
+  <title>OAI T7 - Trợ lý AI</title>
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Quay lại hệ thống chấm điểm">
+      <b>OAI T7</b><span>Trợ lý AI</span>
+    </a>
+    <div class="session-meta" id="session-meta" hidden>
+      <span id="session-expiry"></span>
+      <strong id="token-meter">2.000 / 2.000 token còn lại</strong>
+    </div>
+    <a class="back-link" href="index.html">Về trang chấm điểm</a>
+  </header>
+
+  <main class="page-shell">
+    <section class="setup-panel" id="setup-panel" aria-labelledby="setup-title">
+      <div class="setup-copy">
+        <span class="overline">Phiên thi có giới hạn</span>
+        <h1 id="setup-title">Mở trợ lý AI</h1>
+        <p>Phiên có tổng ngân sách 2.000 token đầu ra. Phần suy luận của mô hình cũng được tính vào giới hạn.</p>
+      </div>
+      <form id="ticket-form" class="ticket-form" novalidate>
+        <label for="ticket">Mã phiên thi</label>
+        <input id="ticket" name="ticket" type="text" inputmode="text" autocomplete="one-time-code" maxlength="64" spellcheck="false" placeholder="OAI-XXXXX-XXXXX">
+        <p class="field-help">Mã được cấp riêng cho mỗi đội. Tải lại trang không làm mới quota.</p>
+        <p class="form-error" id="ticket-error" role="alert" hidden></p>
+        <button class="primary-button" id="ticket-submit" type="submit">Bắt đầu phiên</button>
+      </form>
+      <p class="privacy-note">Website không lưu nội dung hội thoại trong cơ sở dữ liệu. Câu hỏi vẫn được gửi đến nhà cung cấp mô hình để xử lý.</p>
+    </section>
+
+    <section class="chat-panel" id="chat-panel" aria-label="Trợ lý AI" hidden>
+      <div class="conversation" id="conversation" role="log" aria-live="polite" aria-relevant="additions text">
+        <div class="empty-state" id="empty-state">
+          <h1>Trợ lý đã sẵn sàng</h1>
+          <p>Đặt một câu hỏi cụ thể. Câu trả lời ngắn sẽ giúp tiết kiệm ngân sách token của phiên.</p>
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <p class="chat-status" id="chat-status" aria-live="polite"></p>
+        <form class="composer" id="chat-form">
+          <label class="sr-only" for="message">Câu hỏi</label>
+          <textarea id="message" name="message" rows="2" maxlength="4000" placeholder="Nhập câu hỏi. Enter để gửi, Shift + Enter để xuống dòng."></textarea>
+          <div class="composer-actions">
+            <span class="character-count" id="character-count">0 / 4.000</span>
+            <button class="secondary-button" id="stop-button" type="button" hidden>Dừng</button>
+            <button class="primary-button send-button" id="send-button" type="submit">Gửi</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <template id="message-template">
+    <article class="message">
+      <div class="message-role"></div>
+      <div class="message-body">
+        <details class="reasoning" hidden>
+          <summary>Quá trình suy luận</summary>
+          <div class="message-text reasoning-text"></div>
+        </details>
+        <div class="message-text answer-text"></div>
+      </div>
+    </article>
+  </template>
+
+  <script src="chat-config.js"></script>
+  <script src="chat-core.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>

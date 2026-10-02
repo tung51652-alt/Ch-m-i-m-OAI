@@ -49,7 +49,7 @@
   .tabs button:hover { color: var(--text); }
   .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
   .bar-meta { margin-left: auto; display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .link-btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .link-btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); text-decoration: none; }
   .link-btn:hover { background: var(--subtle); }
 
   main { padding: 20px 24px 40px; }
@@ -183,6 +183,7 @@
   </nav>
   <div class="bar-meta">
     <span id="updated"></span>
+    <a class="link-btn" id="chat-link" href="chat.html" hidden>Trợ lý AI</a>
     <button type="button" class="link-btn" id="logout" hidden>Đăng xuất</button>
   </div>
 </header>
@@ -247,6 +248,7 @@
   </section>
 </main>
 
+<script src="chat-config.js"></script>
 <script src="grader.js"></script>
 <script>
 (function () {
@@ -322,6 +324,7 @@
     data = null;
     $("app").hidden = true;
     $("tabs").hidden = true;
+    $("chat-link").hidden = true;
     $("logout").hidden = true;
     $("updated").textContent = "";
     $("view-login").hidden = false;
@@ -342,6 +345,7 @@
     $("view-login").hidden = true;
     $("app").hidden = false;
     $("tabs").hidden = false;
+    $("chat-link").hidden = !(window.OAI_CHAT_CONFIG && window.OAI_CHAT_CONFIG.apiUrl);
     $("logout").hidden = false;
     if (!submitReady) { setupSubmit(); submitReady = true; }
     showView(currentView);

@@ -6,3 +6,6 @@ __pycache__/
 .grader_data_key
 _site/
 .grader_password
+chat_worker/.dev.vars
+chat_worker/wrangler.toml
+chat_worker/.wrangler/

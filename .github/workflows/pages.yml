@@ -53,6 +53,7 @@ jobs:
       - name: Build site
         env:
           GRADER_PASSWORD: ${{ secrets.GRADER_PASSWORD }}
+          CHAT_API_URL: ${{ vars.CHAT_API_URL }}
         run: python scripts/build_site.py --out _site
 
       - uses: actions/configure-pages@v5

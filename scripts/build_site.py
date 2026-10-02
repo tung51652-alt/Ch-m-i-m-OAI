@@ -65,6 +65,9 @@ def main() -> int:
         print("::warning::Chưa có GRADER_PASSWORD; leaderboard.json được publish không mã hóa.")
         payload = data
     (out / "leaderboard.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    chat_api_url = os.environ.get("CHAT_API_URL", "").strip().rstrip("/")
+    chat_config = f"window.OAI_CHAT_CONFIG = Object.freeze({json.dumps({'apiUrl': chat_api_url}, ensure_ascii=False)});\n"
+    (out / "chat-config.js").write_text(chat_config, encoding="utf-8")
     (out / ".nojekyll").touch()
     print(f"Built {out} with {len(data['history'])} submissions "
           f"(encrypted={bool(password)}, mode={data['submit_mode']}).")
