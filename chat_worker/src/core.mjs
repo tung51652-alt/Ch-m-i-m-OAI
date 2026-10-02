@@ -1,4 +1,4 @@
-export const DEFAULT_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai";
+export const DEFAULT_MODEL = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
 export const DEFAULT_SESSION_TOKEN_LIMIT = 2000;
 export const DEFAULT_TURN_TOKEN_LIMIT = 768;
 export const DEFAULT_SESSION_TTL_SECONDS = 3 * 60 * 60;
@@ -98,6 +98,16 @@ export function providerRequest(messages, { model = DEFAULT_MODEL, maxTokens }) 
   };
 }
 
+// Qwen's byte-level tokenizer cannot use more input tokens than UTF-8 bytes.
+// Leave room for the chat template, then reserve the maximum output cost.
+// Units are milli-neurons so all daily-budget arithmetic uses integers.
+export function dailyReservation(messages, maxTokens) {
+  const inputBound = messages.reduce((total, message) => (
+    total + new TextEncoder().encode(message.content).length
+  ), 1024);
+  return Math.ceil(inputBound * 45.171 + maxTokens * 443.757);
+}
+
 function bytesToBase64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -165,6 +175,7 @@ export async function sha256Hex(value) {
 export function createUsageCollector() {
   let buffer = "";
   let completionTokens = null;
+  let neurons = null;
   let sawContent = false;
 
   const processLine = (line) => {
@@ -174,8 +185,11 @@ export function createUsageCollector() {
     if (!data || data === "[DONE]") return;
     try {
       const chunk = JSON.parse(data);
-      const usage = Number(chunk?.usage?.completion_tokens);
+      const usage = chunk?.usage?.completion_tokens;
       if (Number.isInteger(usage) && usage >= 0) completionTokens = usage;
+      if (typeof chunk?.usage?.neurons === "number" && Number.isFinite(chunk.usage.neurons) && chunk.usage.neurons >= 0) {
+        neurons = chunk.usage.neurons;
+      }
       if (chunk?.choices?.some((choice) => {
         const delta = choice?.delta || {};
         return [delta.content, delta.reasoning_content, delta.reasoning]
@@ -197,7 +211,7 @@ export function createUsageCollector() {
     },
     finish() {
       if (buffer) processLine(buffer);
-      return { completionTokens, sawContent };
+      return { completionTokens, sawContent, ...(neurons === null ? {} : { neurons }) };
     },
   };
 }

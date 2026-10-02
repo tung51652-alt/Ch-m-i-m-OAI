@@ -4,12 +4,16 @@ compatibility_date = "2026-09-01"
 
 [vars]
 ALLOWED_ORIGINS = "https://tung51652-alt.github.io,http://localhost:8000,http://127.0.0.1:8000"
-HF_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai"
+DAILY_NEURON_LIMIT = "9000"
 SESSION_TOKEN_LIMIT = "2000"
 TURN_TOKEN_LIMIT = "768"
 SESSION_TTL_SECONDS = "10800"
 PROVIDER_TIMEOUT_MS = "90000"
 PRACTICE_MODE = "false"
+
+[ai]
+binding = "AI"
+remote = true
 
 [[d1_databases]]
 binding = "CHAT_DB"

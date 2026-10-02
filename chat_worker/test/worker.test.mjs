@@ -34,6 +34,18 @@ class FakePrepared {
   }
 
   async run() {
+    if (this.sql.startsWith("INSERT INTO chat_daily_usage")) {
+      const [day, amount, limit] = this.values;
+      const current = this.db.dailyUsage.get(day) || 0;
+      if (current + amount > limit) return { meta: { changes: 0 } };
+      this.db.dailyUsage.set(day, current + amount);
+      return { meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith("UPDATE chat_daily_usage")) {
+      const [refund, day] = this.values;
+      this.db.dailyUsage.set(day, Math.max(0, (this.db.dailyUsage.get(day) || 0) - refund));
+      return { meta: { changes: 1 } };
+    }
     if (this.sql.startsWith("INSERT INTO chat_sessions")) {
       const ticketSession = this.values.length === 5;
       const [id, ticketIdOrLimit, tokenLimitOrExpiry, expiresAtOrCreated, maybeCreatedAt] = this.values;
@@ -104,6 +116,7 @@ class FakeD1 {
   constructor() {
     this.sessions = new Map();
     this.tickets = new Map();
+    this.dailyUsage = new Map();
   }
 
   prepare(sql) {
@@ -127,7 +140,7 @@ function request(path, init = {}) {
 function environment(db) {
   return {
     CHAT_DB: db,
-    HF_TOKEN: "hf_test",
+    AI: { async run() { throw new Error("AI not stubbed"); } },
     SESSION_SIGNING_KEY: "a-secure-session-signing-key-for-worker-tests",
     ALLOWED_ORIGINS: "https://example.github.io",
     PRACTICE_MODE: "true",
@@ -165,20 +178,21 @@ test("practice session streams a response and settles quota from provider usage"
   const opened = await sessionResponse.json();
   assert.equal(opened.session.remainingTokens, 2000);
 
-  const originalFetch = globalThis.fetch;
   let providerBody;
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, "https://router.huggingface.co/v1/chat/completions");
-    providerBody = JSON.parse(init.body);
+  env.AI.run = async (model, inputs, options) => {
+    assert.equal(model, "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b");
+    assert.equal(options.returnRawResponse, true);
+    assert.ok(options.signal instanceof AbortSignal);
+    providerBody = inputs;
     const sse = [
-      "data: {\"choices\":[{\"delta\":{\"content\":\"Xin chào\"}}]}\n\n",
-      "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":42}}\n\n",
+      "data: {\"response\":\"Xin chào\",\"usage\":{\"completion_tokens\":1}}\n\n",
+      "data: {\"response\":\"\",\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":42,\"neurons\":19.6}}\n\n",
       "data: [DONE]\n\n",
     ].join("");
     return new Response(sse, { status: 200, headers: { "Content-Type": "text/event-stream" } });
   };
 
-  try {
+  {
     const chatResponse = await worker.fetch(request("/api/chat", {
       method: "POST",
       headers: { Authorization: `Bearer ${opened.token}`, "Content-Type": "application/json" },
@@ -187,8 +201,6 @@ test("practice session streams a response and settles quota from provider usage"
     assert.equal(chatResponse.status, 200);
     assert.match(await chatResponse.text(), /Xin chào/);
     await Promise.all(waits);
-  } finally {
-    globalThis.fetch = originalFetch;
   }
 
   assert.equal(providerBody.max_tokens, 768);
@@ -203,6 +215,7 @@ test("practice session streams a response and settles quota from provider usage"
   assert.equal(status.session.usedTokens, 42);
   assert.equal(status.session.remainingTokens, 1958);
   assert.equal(status.session.inFlight, false);
+  assert.equal([...db.dailyUsage.values()][0], 19600);
 });
 
 test("worker rejects an unlisted browser origin", async () => {
@@ -224,12 +237,11 @@ test("missing provider usage conservatively charges the full reservation", async
     body: "{}",
   }), env, context)).json();
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
+  env.AI.run = async () => new Response(
     "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\ndata: [DONE]\n\n",
     { status: 200, headers: { "Content-Type": "text/event-stream" } },
   );
-  try {
+  {
     const response = await worker.fetch(request("/api/chat", {
       method: "POST",
       headers: { Authorization: `Bearer ${opened.token}`, "Content-Type": "application/json" },
@@ -237,8 +249,6 @@ test("missing provider usage conservatively charges the full reservation", async
     }), env, context);
     await response.text();
     await Promise.all(waits);
-  } finally {
-    globalThis.fetch = originalFetch;
   }
 
   const row = [...db.sessions.values()][0];
@@ -257,9 +267,8 @@ test("provider rate limit releases the reservation for a retry", async () => {
     body: "{}",
   }), env, context)).json();
 
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response("rate limited", { status: 429, headers: { "Retry-After": "10" } });
-  try {
+  env.AI.run = async () => new Response("rate limited", { status: 429, headers: { "Retry-After": "10" } });
+  {
     const response = await worker.fetch(request("/api/chat", {
       method: "POST",
       headers: { Authorization: `Bearer ${opened.token}`, "Content-Type": "application/json" },
@@ -267,14 +276,13 @@ test("provider rate limit releases the reservation for a retry", async () => {
     }), env, context);
     assert.equal(response.status, 429);
     assert.equal(response.headers.get("Retry-After"), "10");
-  } finally {
-    globalThis.fetch = originalFetch;
   }
 
   const row = [...db.sessions.values()][0];
   assert.equal(row.used_tokens, 0);
   assert.equal(row.reserved_tokens, 0);
   assert.equal(row.in_flight, 0);
+  assert.equal([...db.dailyUsage.values()][0], 0);
 });
 
 test("a session rejects a second concurrent generation", async () => {
@@ -389,4 +397,171 @@ test("a new session is rejected while the current session still has tokens", asy
   assert.equal(response.status, 409);
   assert.match((await response.json()).message, /dùng hết token/);
   assert.equal(db.sessions.size, 1);
+});
+
+async function practiceSession(env) {
+  return (await worker.fetch(request("/api/session", { method: "POST", body: "{}" }), env)).json();
+}
+
+function chatRequest(token) {
+  return request("/api/chat", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: "test" }] }),
+  });
+}
+
+test("health describes Cloudflare configuration but does not call inference", async () => {
+  const env = environment(new FakeD1());
+  const health = await (await worker.fetch(request("/health"), env)).json();
+  assert.equal(health.provider, "cloudflare-workers-ai");
+  assert.equal(health.model, "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b");
+  assert.equal(health.configured, true);
+  assert.equal(health.dailyNeuronLimit, 9000);
+  delete env.AI;
+  assert.equal((await (await worker.fetch(request("/health"), env)).json()).configured, false);
+});
+
+test("daily exhaustion blocks inference without consuming any session tokens", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  db.dailyUsage.set(new Date().toISOString().slice(0, 10), 9000000);
+  const opened = await practiceSession(env);
+  let called = false;
+  env.AI.run = async () => { called = true; throw new Error("must not be reached"); };
+  const response = await worker.fetch(chatRequest(opened.token), env);
+  assert.equal(response.status, 429);
+  assert.match((await response.json()).message, /7 giờ sáng/);
+  assert.equal(called, false);
+  const row = [...db.sessions.values()][0];
+  assert.equal(row.used_tokens, 0);
+  assert.equal(row.reserved_tokens, 0);
+  assert.equal(row.in_flight, 0);
+});
+
+test("fresh sessions share today's budget but yesterday's budget does not block today", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  db.dailyUsage.set("2000-01-01", 9000000);
+  env.AI.run = async () => new Response('data: {"response":"ok"}\n\ndata: [DONE]\n\n', {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+  const first = await practiceSession(env);
+  const response = await worker.fetch(chatRequest(first.token), env);
+  assert.equal(response.status, 200);
+  await response.text();
+  const today = new Date().toISOString().slice(0, 10);
+  assert.ok(db.dailyUsage.get(today) > 0);
+  db.dailyUsage.set(today, 9000000);
+  const second = await practiceSession(env);
+  assert.equal((await worker.fetch(chatRequest(second.token), env)).status, 429);
+});
+
+test("a failed connection releases session tokens but retains uncertain daily cost", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  const opened = await practiceSession(env);
+  const response = await worker.fetch(chatRequest(opened.token), env);
+  assert.equal(response.status, 502);
+  const row = [...db.sessions.values()][0];
+  assert.equal(row.used_tokens, 0);
+  assert.equal(row.in_flight, 0);
+  assert.ok([...db.dailyUsage.values()][0] > 0);
+});
+
+test("stream failure before output releases tokens; partial output is charged conservatively", async () => {
+  for (const partial of [false, true]) {
+    const db = new FakeD1();
+    const env = environment(db);
+    const opened = await practiceSession(env);
+    env.AI.run = async () => new Response(partial ? 'data: {"response":"partial"}\n\n' : 'data: {"error":"failure"}\n\n', {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    const response = await worker.fetch(chatRequest(opened.token), env);
+    await assert.rejects(() => response.text());
+    const row = [...db.sessions.values()][0];
+    assert.equal(row.used_tokens, partial ? 768 : 0);
+    assert.equal(row.in_flight, 0);
+    assert.equal(row.reserved_tokens, 0);
+    assert.ok([...db.dailyUsage.values()][0] > 0);
+  }
+});
+
+test("last turn is capped by the remaining session quota", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  const opened = await practiceSession(env);
+  const row = [...db.sessions.values()][0];
+  row.used_tokens = 1990;
+  env.AI.run = async (_model, inputs) => {
+    assert.equal(inputs.max_tokens, 10);
+    return new Response('data: {"response":"<think>thinking</think>ok"}\n\ndata: {"response":"","usage":{"prompt_tokens":20,"completion_tokens":10,"neurons":5.4}}\n\ndata: [DONE]\n\n', {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  };
+  await (await worker.fetch(chatRequest(opened.token), env)).text();
+  assert.equal(row.used_tokens, 2000);
+  assert.equal((await worker.fetch(chatRequest(opened.token), env)).status, 429);
+});
+
+test("daily limit cannot be configured above Cloudflare's free allowance", async () => {
+  const env = { ...environment(new FakeD1()), DAILY_NEURON_LIMIT: "10001" };
+  assert.equal((await (await worker.fetch(request("/health"), env)).json()).dailyNeuronLimit, 9000);
+});
+
+test("concurrent sessions cannot both reserve the last daily budget", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  const first = await practiceSession(env);
+  const second = await practiceSession(env);
+  db.dailyUsage.set(new Date().toISOString().slice(0, 10), 8500000);
+  let calls = 0;
+  env.AI.run = async () => {
+    calls += 1;
+    return new Response('data: {"response":"ok"}\n\ndata: [DONE]\n\n', {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  };
+  const responses = await Promise.all([worker.fetch(chatRequest(first.token), env), worker.fetch(chatRequest(second.token), env)]);
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 429]);
+  await responses.find(response => response.status === 200).text();
+  assert.equal(calls, 1);
+  assert.ok([...db.dailyUsage.values()][0] <= 9000000);
+});
+
+test("client cancellation aborts inference and settles both quotas once", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  const opened = await practiceSession(env);
+  let signal;
+  let upstreamCancelled = false;
+  env.AI.run = async (_model, _inputs, options) => {
+    signal = options.signal;
+    return new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('data: {"response":"partial"}\n\n')); },
+      cancel() { upstreamCancelled = true; },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+  };
+  const response = await worker.fetch(chatRequest(opened.token), env);
+  const reader = response.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  // Let cancellation propagate through the native-stream transform.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(signal.aborted, true);
+  assert.equal(upstreamCancelled, true);
+  const row = [...db.sessions.values()][0];
+  assert.equal(row.used_tokens, 768);
+  assert.equal(row.reserved_tokens, 0);
+  assert.equal(row.in_flight, 0);
+});
+
+test("unexpected JSON responses are not forwarded as successful SSE", async () => {
+  const db = new FakeD1();
+  const env = environment(db);
+  const opened = await practiceSession(env);
+  env.AI.run = async () => Response.json({response: "not streamed"});
+  assert.equal((await worker.fetch(chatRequest(opened.token), env)).status, 502);
+  assert.equal([...db.sessions.values()][0].used_tokens, 0);
+  assert.ok([...db.dailyUsage.values()][0] > 0);
 });

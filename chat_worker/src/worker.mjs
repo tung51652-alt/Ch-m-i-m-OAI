@@ -6,6 +6,7 @@ import {
   HttpError,
   corsHeaders,
   createUsageCollector,
+  dailyReservation,
   isOriginAllowed,
   normalizeMessages,
   positiveInteger,
@@ -15,8 +16,8 @@ import {
   signSessionToken,
   verifySessionToken,
 } from "./core.mjs";
+import { normalizeCloudflareStream } from "./cloudflare.mjs";
 
-const HF_CHAT_ENDPOINT = "https://router.huggingface.co/v1/chat/completions";
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 const TICKET_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SESSION_COLUMNS = "id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at";
@@ -245,16 +246,47 @@ async function settleReservation(db, sessionId, reservation, usage) {
   ).bind(Math.max(0, charged), sessionId).run();
 }
 
-function auditedProviderStream(upstream, { db, sessionId, reservation, abortController, timeoutId }) {
+function dailyLimit(env) {
+  return positiveInteger(env.DAILY_NEURON_LIMIT, 9000, { min: 1, max: 10000 });
+}
+
+async function reserveDailyBudget(db, env, messages, maxTokens) {
+  const day = nowIso().slice(0, 10); // Same 00:00 UTC reset as Workers AI.
+  const amount = dailyReservation(messages, maxTokens);
+  const limit = dailyLimit(env) * 1000;
+  const exhausted = () => new HttpError(429, "Chatbox đã hết ngân sách AI hôm nay. Quota ngày được đặt lại lúc 7 giờ sáng Việt Nam.");
+  if (amount > limit) throw exhausted();
+  const result = await db.prepare(
+    "INSERT INTO chat_daily_usage (day, neuron_millis) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET neuron_millis = neuron_millis + excluded.neuron_millis WHERE neuron_millis + excluded.neuron_millis <= ?",
+  ).bind(day, amount, limit).run();
+  if (!result.meta?.changes) throw exhausted();
+  return { day, amount };
+}
+
+async function settleDailyBudget(db, budget, neurons) {
+  // Unknown provider cost stays reserved, including disconnected generations.
+  // This intentionally underuses quota rather than potentially exceeding it.
+  if (typeof neurons !== "number" || !Number.isFinite(neurons) || neurons < 0) return;
+  const actual = Math.ceil(neurons * 1000);
+  await db.prepare(
+    "UPDATE chat_daily_usage SET neuron_millis = MAX(0, neuron_millis - ?) WHERE day = ?",
+  ).bind(budget.amount - actual, budget.day).run();
+}
+
+function auditedProviderStream(upstream, { db, sessionId, reservation, budget, abortController, timeoutId }) {
   const reader = upstream.getReader();
   const decoder = new TextDecoder();
   const collector = createUsageCollector();
   let settlement = null;
+  let cancelled = false;
 
   const settleOnce = (usage) => {
     if (!settlement) {
       clearTimeout(timeoutId);
-      settlement = settleReservation(db, sessionId, reservation, usage);
+      settlement = Promise.all([
+        settleReservation(db, sessionId, reservation, usage),
+        settleDailyBudget(db, budget, usage?.neurons),
+      ]);
     }
     return settlement;
   };
@@ -269,16 +301,16 @@ function auditedProviderStream(upstream, { db, sessionId, reservation, abortCont
             const { done, value } = await reader.read();
             if (done) break;
             collector.push(decoder.decode(value, { stream: true }));
-            controller.enqueue(value);
+            if (!cancelled) controller.enqueue(value);
           }
           collector.push(decoder.decode());
           await settleOnce(collector.finish());
-          controller.close();
+          if (!cancelled) controller.close();
         } catch (error) {
           try {
-            await settleOnce({ completionTokens: null, sawContent: true });
+            await settleOnce({ completionTokens: null, sawContent: collector.finish().sawContent });
           } finally {
-            controller.error(error);
+            if (!cancelled) controller.error(error);
           }
         } finally {
           reader.releaseLock();
@@ -287,6 +319,7 @@ function auditedProviderStream(upstream, { db, sessionId, reservation, abortCont
       void pump();
     },
     async cancel(reason) {
+      cancelled = true;
       abortController.abort();
       try { await reader.cancel(reason); } catch (error) { /* upstream may already be closed */ }
       await settleOnce({ completionTokens: null, sawContent: true });
@@ -295,7 +328,7 @@ function auditedProviderStream(upstream, { db, sessionId, reservation, abortCont
 }
 
 async function chat(request, env) {
-  if (!env.HF_TOKEN) throw new Error("Thiếu secret HF_TOKEN.");
+  if (typeof env.AI?.run !== "function") throw new Error("Thiếu Workers AI binding AI.");
   const db = requireDatabase(env);
   const session = await loadAuthorizedSession(request, env);
   const body = await readJson(request);
@@ -312,46 +345,57 @@ async function chat(request, env) {
   ).bind(reservation, reservedAt, session.id, reservation, reservedAt).run();
   if (!reserved.meta?.changes) throw new HttpError(409, "Không thể giữ quota cho lượt này. Vui lòng tải lại trạng thái phiên.");
 
+  let budget;
+  try {
+    budget = await reserveDailyBudget(db, env, messages, reservation);
+  } catch (error) {
+    await releaseReservation(db, session.id);
+    throw error;
+  }
+
   const abortController = new AbortController();
   const timeoutMs = providerTimeoutMs(env);
   const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
   let upstream;
   try {
-    upstream = await fetch(HF_CHAT_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.HF_TOKEN}`,
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify(providerRequest(messages, {
-        model: env.HF_MODEL || DEFAULT_MODEL,
-        maxTokens: reservation,
-      })),
+    const { model, ...inputs } = providerRequest(messages, { maxTokens: reservation });
+    upstream = await env.AI.run(model, inputs, {
+      returnRawResponse: true,
       signal: abortController.signal,
     });
   } catch (error) {
     clearTimeout(timeoutId);
     await releaseReservation(db, session.id);
+    // Preserve the daily reservation: a network failure may follow inference.
     throw new HttpError(502, "Không kết nối được dịch vụ mô hình.");
   }
 
-  if (!upstream.ok || !upstream.body) {
+  if (!upstream.ok || !upstream.body || !upstream.headers.get("Content-Type")?.includes("text/event-stream")) {
     clearTimeout(timeoutId);
+    const retryAfter = upstream.headers.get("Retry-After");
+    let code = null;
+    if (!upstream.ok) {
+      try {
+        const failure = await upstream.json();
+        code = failure.internalCode ?? failure.errors?.[0]?.code ?? null;
+      } catch { /* Keep provider details out of the browser and logs. */ }
+    }
+    console.error("Workers AI request failed", { status: upstream.status, code });
     abortController.abort();
     await releaseReservation(db, session.id);
-    const retryAfter = upstream.headers.get("Retry-After");
+    if (!upstream.ok) await settleDailyBudget(db, budget, 0);
     return responseJson(
-      { ok: false, message: upstream.status === 429 ? "Dịch vụ mô hình đang giới hạn lượt gọi. Vui lòng thử lại sau." : "Dịch vụ mô hình tạm thời không sẵn sàng." },
+      { ok: false, message: upstream.status === 429 ? "Cloudflare đang giới hạn lượt gọi hoặc đã hết quota AI ngày. Quota ngày được đặt lại lúc 7 giờ sáng Việt Nam." : "Dịch vụ mô hình tạm thời không sẵn sàng." },
       upstream.status === 429 ? 429 : 502,
       retryAfter ? { "Retry-After": retryAfter } : {},
     );
   }
 
-  const clientStream = auditedProviderStream(upstream.body, {
+  const clientStream = auditedProviderStream(normalizeCloudflareStream(upstream.body), {
     db,
     sessionId: session.id,
     reservation,
+    budget,
     abortController,
     timeoutId,
   });
@@ -407,7 +451,10 @@ async function createTickets(request, env) {
 async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") {
-    return responseJson({ ok: true, service: "oai-chat", configured: Boolean(env.HF_TOKEN && env.SESSION_SIGNING_KEY && env.CHAT_DB) });
+    return responseJson({ ok: true, service: "oai-chat", provider: "cloudflare-workers-ai", model: DEFAULT_MODEL,
+      configured: Boolean(typeof env.AI?.run === "function" && env.SESSION_SIGNING_KEY && env.CHAT_DB),
+      dailyNeuronLimit: dailyLimit(env),
+    });
   }
   if (request.method === "POST" && url.pathname === "/api/session") return openSession(request, env);
   if (request.method === "GET" && url.pathname === "/api/session") return getSession(request, env);
