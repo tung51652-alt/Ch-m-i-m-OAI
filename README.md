@@ -157,8 +157,8 @@ Trang `chat.html` cung cấp giao diện chat tách khỏi grader để không l
 
 Backend nằm trong `chat_worker/` và được thiết kế cho Cloudflare Worker + D1:
 
-- Hugging Face token và khóa ký session chỉ nằm trong Worker secrets.
-- Model mặc định là `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai` qua Hugging Face Router.
+- OpenRouter API key và khóa ký session chỉ nằm trong Worker secrets.
+- Model mặc định là `deepseek/deepseek-r1-distill-qwen-32b:free` qua OpenRouter; free endpoint có thể bị giới hạn tốc độ hoặc tạm hết khả năng phục vụ.
 - Mỗi ticket nhận một session có 2.000 completion token, bao gồm token suy luận. Khi dùng hết quota hoặc session hết hạn, cùng ticket có thể tạo session mới.
 - D1 chỉ lưu hash ticket, session, quota và thời hạn; không lưu prompt hoặc câu trả lời.
 - Mỗi phiên chỉ chạy một lượt sinh tại một thời điểm và giữ trước quota để tránh vượt giới hạn khi mở nhiều tab.
