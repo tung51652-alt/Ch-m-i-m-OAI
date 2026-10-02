@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAI T7 Leaderboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<style>
+  :root {
+    --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
+    --accent: #2f5bd3; --accent-soft: #e8eefc; --ok: #1f7a4d; --bad: #b3261e; --rank-col: #f3f6fe;
+    --gold: #c9a227; --silver: #9aa3ad; --bronze: #b0743f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161615; --surface: #1f1f1e; --text: #ececea; --muted: #a0a09a; --line: #34342f;
+      --accent: #8aa8ff; --accent-soft: #263152; --ok: #5fcf95; --bad: #ff8a80; --rank-col: #232a3d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161615; --surface: #1f1f1e; --text: #ececea; --muted: #a0a09a; --line: #34342f;
+    --accent: #8aa8ff; --accent-soft: #263152; --ok: #5fcf95; --bad: #ff8a80; --rank-col: #232a3d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+    padding: 10px 18px; border-radius: 8px; }
+  :root[data-theme="dark"] .btn { color: #10162a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn { color: #10162a; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tab { border: 1px solid var(--line); background: transparent; color: var(--text); padding: 7px 14px;
+    border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
+  .tab[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.rankcol, th.rankcol { background: var(--rank-col); }
+  td.team { font-weight: 600; }
+  .rank { display: inline-flex; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center;
+    font-weight: 700; font-variant-numeric: tabular-nums; }
+  .r1 { background: var(--gold); color: #fff; } .r2 { background: var(--silver); color: #fff; } .r3 { background: var(--bronze); color: #fff; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .err { white-space: normal; color: var(--bad); font-size: 13px; max-width: 360px; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  select, input[type="search"] { font: inherit; font-size: 14px; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  input[type="search"] { flex: 1; min-width: 160px; }
+  .empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+  ol.steps { padding-left: 20px; margin: 0; } ol.steps li { margin-bottom: 6px; }
+  code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  a { color: var(--accent); }
+  .more { margin-top: 12px; }
+  .more button { font: inherit; background: none; border: 1px solid var(--line); color: var(--text); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>OAI T7 Leaderboard</h1>
+      <div class="muted small" id="updated">Đang tải…</div>
+    </div>
+    <a class="btn" id="submit-link" href="#" target="_blank" rel="noopener">Nộp bài</a>
+  </header>
+
+  <section class="card">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="muted small" id="metric-note" style="margin-bottom:10px"></div>
+    <div class="table-scroll"><table id="board"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Lịch sử nộp bài</h2>
+    <div class="filters">
+      <select id="f-task" aria-label="Lọc tác vụ"><option value="">Tất cả tác vụ</option></select>
+      <select id="f-status" aria-label="Lọc trạng thái">
+        <option value="">Mọi trạng thái</option><option value="ok">Hợp lệ</option><option value="bad">Không hợp lệ</option>
+      </select>
+      <input type="search" id="f-team" placeholder="Tìm đội…" aria-label="Tìm đội">
+    </div>
+    <div class="table-scroll"><table id="history"></table></div>
+    <div class="more" id="more" hidden><button type="button">Xem thêm</button></div>
+  </section>
+
+  <section class="card">
+    <h2>Cách nộp bài</h2>
+    <ol class="steps">
+      <li>Bấm <b>Nộp bài</b> (cần đăng nhập GitHub), chọn tác vụ và tập đánh giá.</li>
+      <li>Kéo thả file <code>.csv</code> hoặc <code>.zip</code> (chứa <code>submission.csv</code>/<code>output.csv</code>) vào ô <i>File submission</i>, chờ upload xong rồi bấm <b>Submit</b>.</li>
+      <li>Sau ~1 phút bot comment điểm vào issue; bảng xếp hạng cập nhật sau đó ~1 phút.</li>
+    </ol>
+    <p class="muted small" style="margin:12px 0 0">Schema: DeepWeeds <code>image_id,label</code> · Spam Review <code>id,label</code> · ViLexNorm <code>id,normalized</code>.
+      Xếp hạng theo điểm tốt nhất trên Private Test (ViLexNorm: Test Set); hòa thì so Public, rồi đến đội đạt điểm sớm hơn.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
+  const timeFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
+  const fmtTime = (iso) => (iso ? timeFmt.format(new Date(iso)) : "—");
+  const el = (tag, attrs, ...children) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") node.className = v; else node.setAttribute(k, v);
+    }
+    for (const c of children) if (c !== null && c !== undefined) node.append(c instanceof Node ? c : String(c));
+    return node;
+  };
+
+  function repoFromLocation() {
+    const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+    const seg = location.pathname.split("/").filter(Boolean)[0];
+    return m && seg ? `${m[1]}/${seg}` : null;
+  }
+
+  let data, activeTask, historyLimit = 50;
+
+  function renderTabs() {
+    const tabs = document.getElementById("tabs");
+    tabs.replaceChildren(...data.tasks.map((t) => {
+      const b = el("button", { class: "tab", role: "tab", "aria-selected": String(t.key === activeTask) }, t.name);
+      b.addEventListener("click", () => { activeTask = t.key; history.replaceState(null, "", `#${t.key}`); renderTabs(); renderBoard(); });
+      return b;
+    }));
+  }
+
+  function renderBoard() {
+    const task = data.tasks.find((t) => t.key === activeTask);
+    const splits = task.splits;
+    document.getElementById("metric-note").textContent =
+      `Metric: ${task.metric} (càng cao càng tốt) · Xếp hạng theo ${data.split_names[task.ranking_split]}`;
+    const head = el("tr", {}, el("th", {}, "Hạng"), el("th", {}, "Đội"),
+      ...splits.map((s) => el("th", { class: "num" + (s === task.ranking_split ? " rankcol" : "") }, data.split_names[s])),
+      el("th", { class: "num" }, "Số lần nộp"), el("th", {}, "Lần nộp cuối"));
+    const rows = task.leaderboard.map((r) => {
+      const rank = r.rank ? el("span", { class: "rank" + (r.rank <= 3 ? ` r${r.rank}` : "") }, r.rank) : el("span", { class: "muted" }, "—");
+      return el("tr", {}, el("td", {}, rank), el("td", { class: "team" }, r.team),
+        ...splits.map((s) => el("td", { class: "num" + (s === task.ranking_split ? " rankcol" : "") }, fmt(r.best[s]))),
+        el("td", { class: "num" }, `${r.valid_submissions}/${r.submissions}`),
+        el("td", { class: "muted" }, fmtTime(r.last_submitted_at)));
+    });
+    const body = rows.length ? rows
+      : [el("tr", {}, el("td", { class: "empty", colspan: String(splits.length + 4) }, "Chưa có bài nộp hợp lệ."))];
+    document.getElementById("board").replaceChildren(el("thead", {}, head), el("tbody", {}, ...body));
+  }
+
+  function renderHistory() {
+    const task = document.getElementById("f-task").value;
+    const status = document.getElementById("f-status").value;
+    const q = document.getElementById("f-team").value.trim().toLowerCase();
+    const names = Object.fromEntries(data.tasks.map((t) => [t.key, t.name]));
+    const items = data.history.filter((h) =>
+      (!task || h.task === task) && (!status || (status === "ok") === h.valid) && (!q || h.team.toLowerCase().includes(q)));
+    const head = el("tr", {}, el("th", {}, "Thời gian"), el("th", {}, "Đội"), el("th", {}, "Tác vụ"),
+      el("th", {}, "Tập"), el("th", { class: "num" }, "Điểm"), el("th", {}, ""));
+    const rows = items.slice(0, historyLimit).map((h) => {
+      const score = h.valid ? el("td", { class: "num ok" }, fmt(h.score))
+        : el("td", { class: "err" }, "Không hợp lệ: " + (h.errors || []).join(" "));
+      const link = h.issue_url ? el("a", { href: h.issue_url, target: "_blank", rel: "noopener" }, "issue") : el("span", { class: "muted" }, h.source || "");
+      return el("tr", {}, el("td", { class: "muted" }, fmtTime(h.submitted_at)), el("td", { class: "team" }, h.team),
+        el("td", {}, names[h.task] || h.task), el("td", {}, data.split_names[h.split] || h.split), score, el("td", {}, link));
+    });
+    const body = rows.length ? rows : [el("tr", {}, el("td", { class: "empty", colspan: "6" }, "Chưa có lần nộp nào."))];
+    document.getElementById("history").replaceChildren(el("thead", {}, head), el("tbody", {}, ...body));
+    document.getElementById("more").hidden = items.length <= historyLimit;
+  }
+
+  fetch("leaderboard.json", { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((json) => {
+      data = json;
+      const repo = data.repository || repoFromLocation();
+      const link = document.getElementById("submit-link");
+      if (repo) link.href = `https://github.com/${repo}/issues/new?template=submission.yml`; else link.hidden = true;
+      document.getElementById("updated").textContent =
+        `Cập nhật lúc ${fmtTime(data.generated_at)} · ${data.history.length} lần nộp`;
+      const fromHash = location.hash.slice(1);
+      activeTask = data.tasks.some((t) => t.key === fromHash) ? fromHash : data.tasks[0].key;
+      const sel = document.getElementById("f-task");
+      for (const t of data.tasks) sel.append(el("option", { value: t.key }, t.name));
+      for (const id of ["f-task", "f-status", "f-team"])
+        document.getElementById(id).addEventListener("input", () => { historyLimit = 50; renderHistory(); });
+      document.querySelector("#more button").addEventListener("click", () => { historyLimit += 50; renderHistory(); });
+      renderTabs(); renderBoard(); renderHistory();
+    })
+    .catch((e) => { document.getElementById("updated").textContent = "Không tải được dữ liệu bảng xếp hạng (" + e.message + ")."; });
+})();
+</script>
+</body>
+</html>

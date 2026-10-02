@@ -7,7 +7,15 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pandas as pd
 
-from scoring import grade_submission, load_ground_truth, read_submission
+from scoring import TASKS, SPLIT_FILES, grade_submission, load_ground_truth, read_submission
+
+
+def _has_data(task: str, *files: str) -> bool:
+    return all((TASKS[task].organizer_dir / name).is_file() for name in files)
+
+
+HAS_VILEXNORM = _has_data("vilexnorm", "test_ground_truth.csv", "evaluate.py")
+HAS_CLASSIFICATION = all(_has_data(task, *SPLIT_FILES.values()) for task in ["cv", "nlp"])
 
 
 class NamedBytesIO(BytesIO):
@@ -16,6 +24,7 @@ class NamedBytesIO(BytesIO):
         self.name = name
 
 
+@unittest.skipUnless(HAS_VILEXNORM, "Thiếu ground truth ViLexNorm (GRADER_DATA_ROOT)")
 class ViLexNormGraderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -88,6 +97,7 @@ class ViLexNormGraderTests(unittest.TestCase):
             self.assertTrue(grade_submission("vilexnorm", "test", frame)["valid"])
 
 
+@unittest.skipUnless(HAS_CLASSIFICATION, "Thiếu ground truth DeepWeeds/Spam (GRADER_DATA_ROOT)")
 class ExistingTaskRegressionTests(unittest.TestCase):
     def test_deepweeds_and_spam_perfect_submissions_still_work(self) -> None:
         for task in ["cv", "nlp"]:

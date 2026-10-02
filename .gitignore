@@ -3,3 +3,5 @@ __pycache__/
 .venv-team/
 .streamlit/secrets.toml
 *.log
+.grader_data_key
+_site/

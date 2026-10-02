@@ -1,0 +1,107 @@
+name: Grade submission
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Số issue cần chấm lại (ví dụ 12)
+        required: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  grade:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.issue.labels.*.name, 'submission') ||
+      contains(github.event.issue.body, '### File submission')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ISSUE: ${{ github.event.issue.number || inputs.issue }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare event
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}" | jq '{issue: .}' > "${RUNNER_TEMP}/event.json"
+          else
+            cp "${GITHUB_EVENT_PATH}" "${RUNNER_TEMP}/event.json"
+          fi
+
+      - name: Decrypt ground truth
+        env:
+          GRADER_DATA_KEY: ${{ secrets.GRADER_DATA_KEY }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/data"
+          if [[ -n "${GRADER_DATA_KEY}" && -f secure/ground_truth.tar.gz.enc ]]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:GRADER_DATA_KEY \
+              -in secure/ground_truth.tar.gz.enc | tar xzf - -C "${RUNNER_TEMP}/data"
+            find "${RUNNER_TEMP}/data" -type f | sed "s|${RUNNER_TEMP}/data/||"
+          else
+            echo "::warning::Chưa có secret GRADER_DATA_KEY hoặc file secure/ground_truth.tar.gz.enc"
+          fi
+          echo "GRADER_DATA_ROOT=${RUNNER_TEMP}/data" >> "${GITHUB_ENV}"
+
+      - name: Grade
+        id: grade
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_DAILY_SUBMISSIONS: ${{ vars.MAX_DAILY_SUBMISSIONS || '5' }}
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: python scripts/grade_issue.py --event "${RUNNER_TEMP}/event.json" --comment-file "${RUNNER_TEMP}/comment.md"
+
+      - name: Save result to repo
+        if: steps.grade.outputs.status == 'graded' || steps.grade.outputs.status == 'invalid'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add results/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Record submission #${ISSUE}"
+          # One file per submission, so rebasing over concurrent runs never conflicts.
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --quiet && git push --quiet; then exit 0; fi
+            sleep $((attempt * 3))
+          done
+          echo "::error::Không push được kết quả sau 5 lần thử"
+          exit 1
+
+      - name: Comment and label
+        if: steps.grade.outputs.status != ''
+        env:
+          STATUS: ${{ steps.grade.outputs.status }}
+        run: |
+          gh issue comment "${ISSUE}" --body-file "${RUNNER_TEMP}/comment.md"
+          case "${STATUS}" in
+            graded)   label=graded;          color=1f7a4d ;;
+            invalid)  label=invalid;         color=b3261e ;;
+            rejected) label=rejected;        color=6b6b66 ;;
+            *)        label=needs-organizer; color=c9a227 ;;
+          esac
+          gh label create "${label}" --color "${color}" --force >/dev/null 2>&1 || true
+          gh issue edit "${ISSUE}" --add-label "${label}" || true
+          # System errors stay open so the organizer can re-run this workflow for the issue.
+          if [[ "${STATUS}" != "error" ]]; then gh issue close "${ISSUE}"; fi
+
+      - name: Report crash
+        if: failure()
+        run: |
+          gh issue comment "${ISSUE}" --body "⚠️ Lỗi hệ thống khi chấm (xem [log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})). Ban tổ chức sẽ kiểm tra và chấm lại." || true
+          gh issue edit "${ISSUE}" --add-label needs-organizer || true

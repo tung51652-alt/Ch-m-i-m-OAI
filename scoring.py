@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import importlib.util
 from io import BytesIO
+import os
 from pathlib import Path, PurePosixPath
 import sys
 from typing import Any, BinaryIO
@@ -19,7 +20,8 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
 
 APP_DIR = Path(__file__).resolve().parent
-ROOT = APP_DIR.parent
+# Organizer data lives outside the repo; CI points this at a decrypted temp dir.
+ROOT = Path(os.environ.get("GRADER_DATA_ROOT") or APP_DIR.parent).resolve()
 
 
 @dataclass(frozen=True)
