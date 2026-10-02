@@ -25,6 +25,9 @@ FILES=(
   Tac_vu_1_CV/organizer/private_ground_truth.csv
   Tac_vu_2_NLP/organizer/public_ground_truth.csv
   Tac_vu_2_NLP/organizer/private_ground_truth.csv
+  T5/OAI_ViLexNorm/organizer/test_ground_truth.csv
+  T5/OAI_ViLexNorm/organizer/evaluate.py
+  T5/OAI_ViLexNorm/competition/test/test.csv
 )
 
 present=()

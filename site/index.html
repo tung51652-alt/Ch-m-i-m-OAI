@@ -254,10 +254,15 @@
   const TASK_NOTES = {
     cv: { id: "tên file ảnh trong thư mục images/ của tập test.", major: "Negative" },
     nlp: { id: "giá trị cột id trong public_test.csv / private_test.csv.", major: "0 (không spam)" },
+    vilexnorm: { id: "giá trị cột id trong test.csv; normalized là câu văn bản tự do đã chuẩn hóa." },
   };
   const MAX_UPLOAD_MB = { api: 50, issue: 25, static: 25 };
   // Option labels of the GitHub issue form, used to pre-fill it from the page.
-  const ISSUE_TASK_LABEL = { cv: "Tác vụ 1 — Computer Vision: DeepWeeds", nlp: "Tác vụ 2 — NLP: Vietnamese Spam Review Detection" };
+  const ISSUE_TASK_LABEL = {
+    cv: "Tác vụ 1 — Computer Vision: DeepWeeds",
+    nlp: "Tác vụ 2 — NLP: Vietnamese Spam Review Detection",
+    vilexnorm: "Tác vụ 3 — NLP: ViLexNorm",
+  };
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
   const num = (n) => Number(n).toLocaleString("vi-VN");
   const timeFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
@@ -388,7 +393,10 @@
           i ? "   ·   " : "", el("b", { class: "num" }, num(req.rows[s])), ` ${data.split_names[s]}`))),
          el("div", { class: "hint" }, "Mỗi ", el("code", {}, idCol), " xuất hiện đúng một lần; không thiếu, không trùng, không lạ.")]
       : ["Bằng số mẫu của tập test; mỗi ", el("code", {}, idCol), " đúng một lần."];
-    const labelsCell = req.labels
+    const labelsCell = task.metric_kind === "lexical_normalization"
+      ? ["Văn bản tiếng Việt tự do; không được rỗng hoặc NaN. Giữ nguyên ID và trả câu đã chuẩn hóa trong cột ",
+         el("code", {}, labelCol), "."]
+      : req.labels
       ? [el("div", { class: "labels" }, ...req.labels.map((l) => el("code", {}, l))),
          el("div", { class: "hint" }, `${req.labels.length} nhãn; viết đúng chính tả, phân biệt hoa/thường.`)]
       : ["Theo miền nhãn trong train.csv."];
@@ -402,14 +410,31 @@
         row("Cột", el("code", {}, `${idCol},${labelCol}`), " — đúng hai cột, đúng tên",
           note.id ? el("div", { class: "hint" }, el("code", {}, idCol), ` là ${note.id}`) : null),
         row("Số dòng", ...rowsCell),
-        row("Nhãn hợp lệ", ...labelsCell),
+        row(task.metric_kind === "lexical_normalization" ? "Prediction" : "Nhãn hợp lệ", ...labelsCell),
         row("Thứ tự dòng", "Tùy ý; hệ thống căn theo ", el("code", {}, idCol), "."),
         req.example ? row("Ví dụ", el("pre", { class: "example" },
           [req.columns.join(","), ...req.example.map((r) => r.join(",")), "…"].join("\n"))) : null)),
-      el("div", { class: "foot" }, "Bị từ chối khi thiếu hoặc sai tên cột, sai số dòng, thiếu, trùng hoặc lạ ID, dự đoán rỗng, nhãn ngoài danh sách. ",
+      el("div", { class: "foot" }, "Bị từ chối khi thiếu hoặc sai tên cột, sai số dòng, thiếu, trùng hoặc lạ ID, dự đoán rỗng",
+        task.metric_kind === "lexical_normalization" ? ". " : ", nhãn ngoài danh sách. ",
         "Lần nộp bị từ chối vẫn được lưu vào lịch sử nhưng không tính điểm."));
 
     const C = req.labels ? req.labels.length : "C";
+    if (task.metric_kind === "lexical_normalization") {
+      $("metric-card").replaceChildren(
+        panelHead(`Chỉ số đánh giá: ${task.metric}`, "Điểm càng cao càng tốt"),
+        el("div", { class: "panel-body" },
+          el("div", { class: "eqs" },
+            el("div", { class: "eq" }, v("Token Accuracy"), op("="), op("1 −"),
+              frac(["EditDistance(prediction, reference)"], ["Số token reference"])),
+            el("div", { class: "eq" }, v("ERR"), op("="),
+              frac(["Accuracy", sub("system"), " − Accuracy", sub("LAI")], ["1 − Accuracy", sub("LAI")]))),
+          el("ul", { class: "notes" },
+            el("li", {}, "Leave-As-Is (LAI) trả nguyên văn original và có ERR = 0."),
+            el("li", {}, "ERR = 1 là hoàn hảo; ERR < 0 nghĩa là hệ thống làm phát sinh nhiều lỗi hơn số lỗi sửa được."),
+            el("li", {}, "Token Accuracy, Normalization Precision và Normalization Recall là metric phụ."),
+            el("li", {}, `Xếp hạng theo ERR tốt nhất trên ${data.split_names[task.ranking_split]}; bằng điểm thì đội đạt điểm sớm hơn đứng trước.`))));
+      return;
+    }
     $("metric-card").replaceChildren(
       panelHead(`Chỉ số đánh giá: ${task.metric}`, `C = ${C} lớp`),
       el("div", { class: "panel-body" },
@@ -612,7 +637,9 @@
       }
       throw e;
     }
-    const result = OAIGrader.grade(sub, truth, idCol, labelCol);
+    const result = task.metric_kind === "lexical_normalization"
+      ? OAIGrader.gradeLexicalNormalization(sub, truth, idCol, labelCol)
+      : OAIGrader.grade(sub, truth, idCol, labelCol);
     const submission = { team, task: taskKey, split, ...result };
     let standing = null;
     if (result.valid) {
@@ -623,6 +650,13 @@
     }
     const box = resultBox({ submission, standing });
     if (result.valid) {
+      if (task.metric_kind === "lexical_normalization") {
+        box.append(el("div", { class: "save-box" },
+          el("div", {}, "Điểm và hạng ở trên là dự kiến và chưa được lưu. Với ViLexNorm, file chứa văn bản tự do nên không thể nhét an toàn vào URL GitHub. ",
+            "Hãy mở form, chọn đúng ViLexNorm / Test Set, đính kèm chính file vừa chấm rồi bấm Submit."),
+          el("a", { class: "primary", target: "_blank", rel: "noopener", href: issueUrl({}) }, "Mở form và đính kèm file")));
+        return box;
+      }
       const code = await OAIGrader.encodePrediction(sub, truth, idCol, labelCol, { task: taskKey, split, file_name: file.name });
       const url = savingIssueUrl({ team, taskKey, split, fileName: file.name, score: result.score, code });
       box.append(el("div", { class: "save-box" },
@@ -655,12 +689,15 @@
     const st = body.standing;
     const rankText = (st.rank ? `Hạng ${st.rank} / ${st.ranked_teams}` : `Chưa xếp hạng · cần điểm ${data.split_names[st.ranking_split]}`)
       + (data.submit_mode === "static" ? " (dự kiến)" : "");
+    const metricDetails = Object.entries(s.secondary_metrics || {}).map(([name, value]) =>
+      el("div", {}, el("dt", {}, name), el("dd", {}, fmt(value))));
     return el("div", { class: "result" },
       el("div", { class: "result-top" }, el("span", { class: "tag" }, "Hợp lệ"), context),
       el("div", { class: "score-line" }, el("span", { class: "score" }, fmt(s.score)), el("span", { class: "rank-text" }, rankText)),
       el("dl", { class: "kv" },
         el("div", {}, el("dt", {}, "Metric"), el("dd", {}, s.metric_name)),
-        ...task.splits.map((sp) => el("div", {}, el("dt", {}, `Tốt nhất · ${data.split_names[sp]}`), el("dd", {}, fmt(st.best[sp]))))),
+        ...task.splits.map((sp) => el("div", {}, el("dt", {}, `Tốt nhất · ${data.split_names[sp]}`), el("dd", {}, fmt(st.best[sp])))),
+        ...metricDetails),
       warnings);
   }
 

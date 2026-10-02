@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from leaderboard import ACTIVE_TASKS, export_site_data, load_records, task_splits  # noqa: E402
-from scoring import get_task_config, load_ground_truth  # noqa: E402
+from scoring import get_task_config, load_ground_truth, load_test_input  # noqa: E402
 from sitelock import encrypt_json, load_password  # noqa: E402
 
 
@@ -35,6 +35,9 @@ def ground_truth_payload() -> dict:
                 "ids": frame[config.id_col].astype(str).tolist(),
                 "labels": frame[config.label_col].astype(str).tolist(),
             }
+            if config.metric_kind == "lexical_normalization":
+                test_input = load_test_input(config)
+                truth[task][split]["originals"] = test_input["original"].astype(str).tolist()
     return truth
 
 

@@ -15,7 +15,7 @@ import secrets
 from typing import Any, Iterable
 import unicodedata
 
-from scoring import TASKS, get_task_config, load_ground_truth
+from scoring import TASKS, get_task_config, load_ground_truth, load_test_input
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -25,10 +25,10 @@ TEAMS_FILE = APP_DIR / "teams.json"
 # Daily submission limits reset at midnight Vietnam time.
 LOCAL_TZ = timezone(timedelta(hours=7))
 
-# Tasks open for submission and shown on the leaderboard (OAI T7: DeepWeeds + Spam Review).
+# Tasks open for submission and shown on the leaderboard.
 ACTIVE_TASKS = [
     task.strip()
-    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp").split(",")
+    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp,vilexnorm").split(",")
     if task.strip() in TASKS
 ]
 
@@ -247,12 +247,20 @@ def task_requirements(task: str) -> dict[str, Any]:
         except (OSError, RuntimeError, ValueError):
             continue
         rows[split] = len(truth)
-        labels |= set(truth[config.label_col].astype(str))
+        if config.metric_kind != "lexical_normalization":
+            labels |= set(truth[config.label_col].astype(str))
         if not example_ids:
             example_ids = truth[config.id_col].astype(str).head(3).tolist()
     sorted_labels = sorted(labels)
     example = None
-    if example_ids and sorted_labels:
+    if config.metric_kind == "lexical_normalization":
+        try:
+            test_input = load_test_input(config).head(3)
+            # Leave-As-Is examples are public test inputs, never hidden normalized labels.
+            example = test_input[[config.id_col, "original"]].astype(str).values.tolist()
+        except (OSError, RuntimeError, ValueError):
+            pass
+    elif example_ids and sorted_labels:
         # Labels are cycled from the label domain, not taken from the ground truth.
         example = [[i, sorted_labels[n % len(sorted_labels)]] for n, i in enumerate(example_ids)]
     return {
@@ -282,6 +290,7 @@ def export_site_data(
                 "key": key,
                 "name": config.display_name,
                 "metric": "Error Reduction Rate (ERR)" if config.metric_kind == "lexical_normalization" else "Macro F1",
+                "metric_kind": config.metric_kind,
                 "splits": task_splits(key),
                 "ranking_split": ranking_split(key),
                 "leaderboard": build_leaderboard(records, key),

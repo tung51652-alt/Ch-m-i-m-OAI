@@ -8,7 +8,8 @@ body:
       value: |
         Mỗi issue là **một lần nộp**. Sau khoảng 1 phút, bot sẽ comment điểm vào issue này và tự đóng issue.
 
-        Schema: DeepWeeds `image_id,label` · Spam Review `id,label`.
+        Schema: DeepWeeds `image_id,label` · Spam Review `id,label` · ViLexNorm `id,normalized`.
+        DeepWeeds/Spam Review dùng Public hoặc Private Test; ViLexNorm chỉ dùng Test Set.
         File ZIP phải chứa đúng một file `submission.csv` hoặc `output.csv`.
   - type: dropdown
     id: team
@@ -27,6 +28,7 @@ body:
       options:
         - "Tác vụ 1 — Computer Vision: DeepWeeds"
         - "Tác vụ 2 — NLP: Vietnamese Spam Review Detection"
+        - "Tác vụ 3 — NLP: ViLexNorm"
     validations:
       required: true
   - type: dropdown
@@ -36,6 +38,7 @@ body:
       options:
         - "Public Test"
         - "Private Test"
+        - "Test Set (ViLexNorm)"
     validations:
       required: true
   - type: textarea

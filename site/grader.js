@@ -1,8 +1,7 @@
 /*
  * In-browser grader for the static (GitHub Pages) site.
  * A line-by-line port of scoring.py: same parsing rules (pandas read_csv with dtype=str),
- * same validation, same Vietnamese messages and the same Macro-F1 as sklearn
- * f1_score(average="macro", labels=<truth labels>, zero_division=0).
+ * same validation, Macro-F1 for classification, and canonical ERR for ViLexNorm.
  */
 (function () {
   "use strict";
@@ -125,7 +124,9 @@
   // ---------- validation (scoring.validate_submission) ----------
   const isMissing = (v) => v === null || v === undefined || String(v).trim() === "";
 
-  function validate(sub, truth, idCol, labelCol) {
+  function validate(sub, truth, idCol, labelCol, options = {}) {
+    const validateLabelDomain = options.validateLabelDomain !== false;
+    const rejectExtraColumns = options.rejectExtraColumns === true;
     const errors = [], warnings = [];
     const expected = truth.ids.length, submitted = sub.rows.length;
     const stats = { expected_samples: expected, submitted_samples: submitted, valid_samples: 0, missing_id_values: 0,
@@ -135,7 +136,11 @@
     const missingCols = required.filter((c) => !sub.columns.includes(c));
     missingCols.forEach((c) => errors.push(`Submission không có cột \`${c}\`.`));
     const extra = sub.columns.filter((c) => !required.includes(c));
-    if (extra.length) warnings.push(`Submission có cột thừa: ${extra.map((c) => `\`${c}\``).join(", ")}. Các cột này sẽ bị bỏ qua.`);
+    if (extra.length) {
+      const message = `Submission có cột thừa: ${extra.map((c) => `\`${c}\``).join(", ")}.`;
+      if (rejectExtraColumns) errors.push(message);
+      else warnings.push(`${message} Các cột này sẽ bị bỏ qua.`);
+    }
     if (submitted !== expected) errors.push(`Sai số dòng: cần ${n(expected)}, nhận ${n(submitted)}.`);
     if (missingCols.length) return { valid: false, errors, warnings, stats };
 
@@ -159,20 +164,24 @@
     if (stats.missing_ids) errors.push(`Submission thiếu ${n(stats.missing_ids)} mẫu so với ground truth.`);
     if (stats.unknown_ids) errors.push(`Submission chứa ${n(stats.unknown_ids)} \`${idCol}\` không thuộc test set.`);
 
-    const validLabels = new Set(truth.labels);
-    const presentLabels = sub.rows.filter((_, i) => !labelMissing[i]).map((r) => String(r[labelCol]));
-    const invalidValues = sortStr(new Set(presentLabels.filter((l) => !validLabels.has(l))));
-    if (invalidValues.length) {
-      const bad = new Set(invalidValues);
-      stats.invalid_labels = presentLabels.filter((l) => bad.has(l)).length;
-      const shown = invalidValues.slice(0, 8).map(repr).join(", ");
-      const suffix = invalidValues.length > 8 ? " ..." : "";
-      errors.push(`Có ${n(stats.invalid_labels)} prediction dùng label không hợp lệ: ${shown}${suffix}. ` +
-        `Miền hợp lệ: ${reprList(sortStr(validLabels))}.`);
+    const validLabels = new Set();
+    if (validateLabelDomain) {
+      truth.labels.forEach((label) => validLabels.add(label));
+      const presentLabels = sub.rows.filter((_, i) => !labelMissing[i]).map((r) => String(r[labelCol]));
+      const invalidValues = sortStr(new Set(presentLabels.filter((l) => !validLabels.has(l))));
+      if (invalidValues.length) {
+        const bad = new Set(invalidValues);
+        stats.invalid_labels = presentLabels.filter((l) => bad.has(l)).length;
+        const shown = invalidValues.slice(0, 8).map(repr).join(", ");
+        const suffix = invalidValues.length > 8 ? " ..." : "";
+        errors.push(`Có ${n(stats.invalid_labels)} prediction dùng label không hợp lệ: ${shown}${suffix}. ` +
+          `Miền hợp lệ: ${reprList(sortStr(validLabels))}.`);
+      }
     }
 
     stats.valid_samples = sub.rows.filter((r, i) => !idMissing[i] && !labelMissing[i]
-      && truthIds.has(String(r[idCol])) && validLabels.has(String(r[labelCol]))).length;
+      && truthIds.has(String(r[idCol]))
+      && (!validateLabelDomain || validLabels.has(String(r[labelCol])))).length;
     return { valid: errors.length === 0, errors, warnings, stats };
   }
 
@@ -204,6 +213,139 @@
     return { ...validation, score: macroF1(truth.labels, yPred, labels), metric_name: "Macro F1" };
   }
 
+  // ---------- ViLexNorm ERR (port of organizer/evaluate.py) ----------
+  const normalizeText = (value) => String(value).normalize("NFC").trim().split(/\s+/u).filter(Boolean).join(" ");
+  const tokenize = (value) => {
+    const normalized = normalizeText(value);
+    return normalized ? normalized.split(" ") : [];
+  };
+
+  function levenshteinDistance(left, right) {
+    if (left.length < right.length) [left, right] = [right, left];
+    let previous = Array.from({ length: right.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= left.length; i += 1) {
+      const current = [i];
+      for (let j = 1; j <= right.length; j += 1) {
+        current.push(Math.min(
+          previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
+          previous[j] + 1,
+          current[j - 1] + 1,
+        ));
+      }
+      previous = current;
+    }
+    return previous[previous.length - 1];
+  }
+
+  function alignmentOperations(source, target) {
+    const rows = source.length + 1, cols = target.length + 1;
+    const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
+    for (let i = 0; i < rows; i += 1) dp[i][0] = i;
+    for (let j = 0; j < cols; j += 1) dp[0][j] = j;
+    for (let i = 1; i < rows; i += 1) {
+      for (let j = 1; j < cols; j += 1) {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + (source[i - 1] === target[j - 1] ? 0 : 1),
+        );
+      }
+    }
+    const reversed = [];
+    let i = source.length, j = target.length;
+    while (i || j) {
+      if (i && j && source[i - 1] === target[j - 1] && dp[i][j] === dp[i - 1][j - 1]) {
+        reversed.push(["equal", target[j - 1]]); i -= 1; j -= 1;
+      } else if (i && j && dp[i][j] === dp[i - 1][j - 1] + 1) {
+        reversed.push(["replace", target[j - 1]]); i -= 1; j -= 1;
+      } else if (i && dp[i][j] === dp[i - 1][j] + 1) {
+        reversed.push(["delete", null]); i -= 1;
+      } else {
+        reversed.push(["insert", target[j - 1]]); j -= 1;
+      }
+    }
+    return reversed.reverse();
+  }
+
+  function extractEdits(source, target) {
+    const edits = [];
+    let sourcePos = 0, activeStart = null, activeEnd = 0, replacement = [];
+    const flush = () => {
+      if (activeStart !== null) edits.push([activeStart, activeEnd, replacement]);
+      activeStart = null; replacement = [];
+    };
+    for (const [operation, targetToken] of alignmentOperations(source, target)) {
+      if (operation === "equal") { flush(); sourcePos += 1; continue; }
+      if (activeStart === null) { activeStart = sourcePos; activeEnd = sourcePos; }
+      if (operation === "replace" || operation === "delete") { sourcePos += 1; activeEnd = sourcePos; }
+      if ((operation === "replace" || operation === "insert") && targetToken !== null) replacement.push(targetToken);
+    }
+    flush();
+    return edits;
+  }
+
+  function editCounts(edits) {
+    const counts = new Map();
+    edits.forEach((edit) => {
+      const key = JSON.stringify(edit);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }
+
+  function evaluateLexicalNormalization(originals, references, predictions) {
+    if (!(originals.length === references.length && references.length === predictions.length) || !originals.length) {
+      throw new Error("Original/reference/prediction lengths must match and be non-empty.");
+    }
+    let systemDistance = 0, laiDistance = 0, referenceTokens = 0, tp = 0, fp = 0, fn = 0;
+    for (let i = 0; i < originals.length; i += 1) {
+      const source = tokenize(originals[i]);
+      const reference = tokenize(references[i]);
+      const prediction = tokenize(predictions[i]);
+      referenceTokens += reference.length;
+      laiDistance += levenshteinDistance(source, reference);
+      systemDistance += levenshteinDistance(prediction, reference);
+
+      const gold = editCounts(extractEdits(source, reference));
+      const predicted = editCounts(extractEdits(source, prediction));
+      let correct = 0, goldTotal = 0, predictedTotal = 0;
+      gold.forEach((count, key) => { goldTotal += count; correct += Math.min(count, predicted.get(key) || 0); });
+      predicted.forEach((count) => { predictedTotal += count; });
+      tp += correct; fp += predictedTotal - correct; fn += goldTotal - correct;
+    }
+    if (!referenceTokens) throw new Error("Ground truth contains no reference tokens.");
+    if (!laiDistance) throw new Error("ERR is undefined because Leave-As-Is has no errors.");
+    return {
+      err: 1 - systemDistance / laiDistance,
+      token_accuracy: 1 - systemDistance / referenceTokens,
+      precision: tp + fp ? tp / (tp + fp) : 0,
+      recall: tp + fn ? tp / (tp + fn) : 0,
+    };
+  }
+
+  function gradeLexicalNormalization(sub, truth, idCol = "id", labelCol = "normalized") {
+    const validation = validate(sub, truth, idCol, labelCol, { validateLabelDomain: false, rejectExtraColumns: true });
+    if (!validation.valid) {
+      return { ...validation, score: null, metric_name: "Error Reduction Rate (ERR)", secondary_metrics: null };
+    }
+    if (!Array.isArray(truth.originals) || truth.originals.length !== truth.ids.length) {
+      throw new Error("Trang chưa có test input ViLexNorm đầy đủ.");
+    }
+    const lookup = new Map(sub.rows.map((r) => [String(r[idCol]), String(r[labelCol])]));
+    const predictions = truth.ids.map((id) => lookup.get(id));
+    const metrics = evaluateLexicalNormalization(truth.originals, truth.labels, predictions);
+    return {
+      ...validation,
+      score: metrics.err,
+      metric_name: "Error Reduction Rate (ERR)",
+      secondary_metrics: {
+        "Token Accuracy": metrics.token_accuracy,
+        "Normalization Precision": metrics.precision,
+        "Normalization Recall": metrics.recall,
+      },
+    };
+  }
+
   // ---------- compact encoding for saving through a pre-filled GitHub issue ----------
   const PRED_PREFIX = "oai-pred:v1:";
 
@@ -226,5 +368,8 @@
     return PRED_PREFIX + btoa(binary);
   }
 
-  window.OAIGrader = { SubmissionReadError, readSubmission, parseCsv, validate, grade, macroF1, encodePrediction };
+  window.OAIGrader = {
+    SubmissionReadError, readSubmission, parseCsv, validate, grade, macroF1,
+    gradeLexicalNormalization, evaluateLexicalNormalization, levenshteinDistance, encodePrediction,
+  };
 })();

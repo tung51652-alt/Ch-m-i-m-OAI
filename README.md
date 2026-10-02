@@ -1,12 +1,12 @@
-# OAI T7 — Local Grading System
+# OAI — Local Grading System
 
-Hệ thống chấm local cho hai tác vụ OAI T7: DeepWeeds (phân loại ảnh 9 lớp) và Vietnamese Spam Review Detection (4 nhãn `0`–`3`), mỗi tác vụ có Public/Private Test, metric Macro-F1. Ground truth chỉ được đọc nội bộ và không có chức năng tải xuống.
+Hệ thống chấm local và online cho ba tác vụ: DeepWeeds (phân loại ảnh 9 lớp), Vietnamese Spam Review Detection (4 nhãn `0`–`3`) và ViLexNorm (chuẩn hóa từ vựng tiếng Việt). Hai bài phân loại có Public/Private Test và dùng Macro-F1; ViLexNorm có một Test Set và dùng Error Reduction Rate (ERR).
 
 ## 1. Cài đặt
 
 ```bash
 cd OAI_T7/grader_web
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ## 2. Chạy
@@ -14,12 +14,12 @@ pip install -r requirements.txt
 ### Web nộp bài + bảng xếp hạng (khuyên dùng)
 
 ```bash
-GRADER_DATA_ROOT=~/Downloads/OAI_T7 python server.py --port 8000
+GRADER_DATA_ROOT=~/Downloads/OAI_T7 python3 server.py --port 8000
 ```
 
-Mở <http://localhost:8000>. Web có hai tab: **Nộp bài** (chọn đội trong danh sách `teams.json`, tác vụ, Public/Private, file CSV/ZIP → điểm Macro-F1 và thứ hạng) và **Bảng xếp hạng** (rank theo từng tác vụ và lịch sử nộp). Mọi lần nộp được lưu ở `results/submissions/`.
+Mở <http://localhost:8000>. Web có hai tab: **Nộp bài** (chọn đội trong `teams.json`, tác vụ, tập đánh giá và file CSV/ZIP để nhận điểm cùng thứ hạng) và **Bảng xếp hạng** (rank theo từng tác vụ và lịch sử nộp). Mọi lần nộp được lưu ở `results/submissions/`.
 
-`GRADER_DATA_ROOT` là thư mục chứa `Tac_vu_1_CV/organizer/` và `Tac_vu_2_NLP/organizer/` (mặc định là thư mục cha của repo). `MAX_DAILY_SUBMISSIONS` giới hạn số bài hợp lệ/ngày/đội/tập (mặc định không giới hạn).
+`GRADER_DATA_ROOT` là thư mục chứa `Tac_vu_1_CV/`, `Tac_vu_2_NLP/` và `T5/OAI_ViLexNorm/` (mặc định là thư mục cha của repo). `MAX_DAILY_SUBMISSIONS` giới hạn số bài hợp lệ/ngày/đội/tập (mặc định không giới hạn).
 
 Tab **Nộp bài** hiển thị luôn *Yêu cầu file nộp* (định dạng, cột, số dòng, danh sách nhãn, ví dụ) và *Chỉ số đánh giá* (công thức Macro-F1, cách xếp hạng) theo tác vụ/tập đang chọn.
 
@@ -36,21 +36,21 @@ gh secret set GRADER_PASSWORD < .grader_password
 ### App Streamlit cho ban tổ chức (có F1 theo lớp, confusion matrix)
 
 ```bash
-streamlit run app.py --server.address 0.0.0.0
+python3 -m streamlit run app.py --server.address 0.0.0.0
 ```
 
 Truy cập trên chính máy đang chạy: <http://localhost:8501>. Thiết bị khác trong cùng mạng LAN dùng `Network URL` mà Streamlit in ra khi khởi động.
 
 ## 3. Cách dùng
 
-1. Nhập **Tên đội**, chọn tác vụ (DeepWeeds hoặc Spam Review).
-2. Chọn Public Test hoặc Private Test.
+1. Nhập **Tên đội** và chọn tác vụ.
+2. Chọn Public/Private Test cho bài phân loại; ViLexNorm dùng Test Set duy nhất.
 3. Upload file CSV, hoặc ZIP chứa đúng một file có tên `submission.csv` hay `output.csv`.
 4. Bấm **Chấm điểm**.
 
-Nhãn hợp lệ: DeepWeeds `Chinee apple, Lantana, Negative, Parkinsonia, Parthenium, Prickly acacia, Rubber vine, Siam weed, Snake weed`; Spam Review `0, 1, 2, 3`. Số dòng: DeepWeeds public 2,715 / private 2,748; Spam Review public 1,590 / private 3,974.
+Nhãn hợp lệ: DeepWeeds `Chinee apple, Lantana, Negative, Parkinsonia, Parthenium, Prickly acacia, Rubber vine, Siam weed, Snake weed`; Spam Review `0, 1, 2, 3`. ViLexNorm nhận câu chuẩn hóa tự do trong cột `normalized`. Số dòng: DeepWeeds public 2,715 / private 2,748; Spam Review public 1,590 / private 3,974; ViLexNorm test 1,044.
 
-Hệ thống kiểm tra schema, số dòng, ID thiếu/lạ/trùng, prediction rỗng và label không hợp lệ trước khi chấm. Dự đoán được căn theo ID nên submission có thể sắp xếp dòng theo thứ tự bất kỳ. Cả hai tác vụ dùng Macro-F1 (`sklearn.metrics.f1_score(average="macro")`, giống `organizer/evaluate.py`).
+Hệ thống kiểm tra schema, số dòng, ID thiếu/lạ/trùng, prediction rỗng và label không hợp lệ trước khi chấm. Dự đoán được căn theo ID nên submission có thể sắp xếp dòng theo thứ tự bất kỳ. Hai bài phân loại dùng Macro-F1 (`sklearn.metrics.f1_score(average="macro")`). ViLexNorm dùng evaluator chính thức trong `T5/OAI_ViLexNorm/organizer/evaluate.py`: ERR là mức cải thiện token accuracy so với baseline Leave-As-Is; Token Accuracy, Normalization Precision và Normalization Recall là metric phụ.
 
 Mọi lần chấm (kể cả không hợp lệ) đều được lưu vào `results/submissions/`; tab **Bảng xếp hạng** hiển thị rank và lịch sử nộp.
 
@@ -90,7 +90,7 @@ GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động nh�
 
 ```
 Đội mở Issue "Nộp bài chấm điểm", chọn Đội/Tác vụ/Tập, đính kèm CSV/ZIP (hoặc dán link raw của Gist)
-  → GitHub Actions (grade.yml) giải mã đáp án bằng secret, chấm điểm
+  → GitHub Actions (grade.yml) giải mã dữ liệu chấm bằng secret, chấm điểm
   → lưu kết quả vào results/submissions/gh-<số issue>.json (commit vào main)
   → comment điểm + thứ hạng vào issue, gắn nhãn, đóng issue
   → pages.yml build lại trang và deploy lên https://<owner>.github.io/<repo>/
@@ -102,13 +102,13 @@ GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động nh�
 ### Xếp hạng
 
 - DeepWeeds và Spam Review: lưu điểm tốt nhất trên **Public** và **Private** của mỗi đội; xếp hạng theo Private, hòa thì so Public, vẫn hòa thì đội đạt điểm sớm hơn đứng trên (cùng hạng nếu bằng cả hai điểm). Đội chưa có điểm Private hiển thị cuối bảng, chưa có hạng.
-- ViLexNorm: xếp hạng theo điểm ERR tốt nhất trên Test Set.
+- ViLexNorm: xếp hạng theo ERR tốt nhất trên Test Set; hòa điểm thì đội đạt điểm sớm hơn đứng trước.
 - Giới hạn mặc định **5 bài hợp lệ/ngày cho mỗi đội, mỗi tác vụ, mỗi tập** (reset 00:00 giờ Việt Nam) để hạn chế dò đáp án Private. Đổi bằng biến `MAX_DAILY_SUBMISSIONS` (đặt `0` = không giới hạn) tại *Settings → Secrets and variables → Actions → Variables*.
 - Danh sách đội nằm trong `teams.json` (hiện có: Kiên, Tùng, Thanh). Web local hiển thị các đội này trong ô chọn và chỉ chấp nhận các tên này. Khi nộp qua GitHub Issue, điền GitHub username của thành viên vào danh sách của từng đội để gom về đúng đội; để trống `[]` thì tên đội = GitHub username.
 
 Trang github.io: <https://tung51652-alt.github.io/Ch-m-i-m-OAI/> (cần mật khẩu, giống bản local).
 
-Trên trang, bấm **Chấm điểm** là chấm ngay trong trình duyệt (`site/grader.js`, cùng logic với `scoring.py`; đáp án nằm trong dữ liệu đã mã hóa bằng mật khẩu). Bấm **Lưu lên bảng xếp hạng** để mở một issue đã điền sẵn đội, tác vụ, tập, ghi chú và mã dự đoán (`oai-pred:v1:…`, dự đoán nén theo thứ tự ID của đáp án); người nộp chỉ cần bấm **Create**. Actions giải mã, dựng lại file, chấm lại bằng `scoring.py` và lưu kết quả chính thức.
+Trên trang, bấm **Chấm điểm** là chấm ngay trong trình duyệt (`site/grader.js`, cùng logic với `scoring.py`; dữ liệu chấm nằm trong payload đã mã hóa bằng mật khẩu). Với hai bài phân loại, nút **Lưu lên bảng xếp hạng** mở một issue đã điền mã dự đoán nén (`oai-pred:v1:…`). Với ViLexNorm, dự đoán là văn bản tự do và quá dài cho URL nên trang mở form Issue; người nộp chọn ViLexNorm / Test Set và đính kèm chính file CSV/ZIP vừa chấm. Actions luôn chấm lại bằng `scoring.py` trước khi lưu kết quả chính thức.
 
 Nộp từ dòng lệnh thay vì kéo thả file:
 
@@ -139,14 +139,14 @@ gh api gists/<id> --jq '.files[].raw_url'   # dán link raw này vào ô "File s
 
 - **Chấm lại một issue** (ví dụ lúc đáp án chưa sẵn sàng, issue có nhãn `needs-organizer`): *Actions → Grade submission → Run workflow*, nhập số issue.
 - **Xóa một lần nộp**: xóa file `results/submissions/gh-<số issue>.json`, commit và push; trang tự build lại.
-- **Xem trước trang github.io trên máy**: `python scripts/serve_site.py` rồi mở <http://localhost:8000> (dữ liệu lấy trực tiếp từ `results/submissions/`, kể cả bài chấm bằng app local).
+- **Xem trước trang github.io trên máy**: chạy `GRADER_PASSWORD='mật-khẩu' python3 scripts/build_site.py --out _site`, sau đó `python3 -m http.server 8000 -d _site` và mở <http://localhost:8000>.
 - **Xem toàn bộ lịch sử**: trên trang github.io (mục *Lịch sử nộp bài*) hoặc thư mục `results/submissions/`.
 - Lưu ý: issue là công khai, nên các đội có thể tải file dự đoán của nhau. Điểm Private hiện công khai ngay khi nộp.
 
 ### Chạy test
 
 ```bash
-python -m unittest discover -p "test_*.py"
+python3 -m unittest discover -p "test_*.py"
 ```
 
 Test dùng dữ liệu tổng hợp, không cần đáp án thật; các test với đáp án thật tự bỏ qua khi máy không có dữ liệu.

@@ -242,6 +242,33 @@ class GradeIssueTests(unittest.TestCase):
         options = [line.strip().strip("- ").strip('"') for line in block.splitlines() if line.strip().startswith("- ")]
         self.assertEqual(options, team_names())
 
+    def test_issue_form_offers_vilexnorm_and_its_test_split(self) -> None:
+        template = (Path(__file__).resolve().parent / ".github/ISSUE_TEMPLATE/submission.yml").read_text(encoding="utf-8")
+        self.assertIn('"Tác vụ 3 — NLP: ViLexNorm"', template)
+        self.assertIn('"Test Set (ViLexNorm)"', template)
+
+    @unittest.skipUnless(
+        scoring.TASKS["vilexnorm"].test_input_path and scoring.TASKS["vilexnorm"].test_input_path.is_file()
+        and (scoring.TASKS["vilexnorm"].organizer_dir / "test_ground_truth.csv").is_file()
+        and (scoring.TASKS["vilexnorm"].organizer_dir / "evaluate.py").is_file(),
+        "Thiếu dữ liệu chấm ViLexNorm",
+    )
+    def test_vilexnorm_issue_attachment_is_graded_and_ranked(self) -> None:
+        sample = pd.read_csv(scoring.TASKS["vilexnorm"].test_input_path, dtype=str).rename(
+            columns={"original": "normalized"}
+        )
+        status, comment = self.run_issue(
+            self.body(task="Tác vụ 3 — NLP: ViLexNorm", split="Test Set (ViLexNorm)"),
+            data=sample.to_csv(index=False).encode("utf-8"),
+            number=31,
+        )
+        self.assertEqual(status, "graded")
+        self.assertIn("Error Reduction Rate (ERR)", comment)
+        self.assertIn("Token Accuracy", comment)
+        self.assertIn("0.000000", comment)
+        [saved] = load_records(self.results)
+        self.assertEqual((saved["task"], saved["split"], saved["score"]), ("vilexnorm", "test", 0.0))
+
     def pred_code(self, pred, task="cv", split="public", labels=None):
         payload = {"v": 1, "task": task, "split": split, "file_name": "output.csv",
                    "labels": labels or ["a", "b", "c"], "pred": pred}
@@ -329,8 +356,21 @@ class RequirementsTests(unittest.TestCase):
         self.assertEqual(normalize_team(decomposed), "Kiên")
         self.assertEqual(team_names(Path("/nonexistent.json")), [])
 
-    def test_only_oai_t7_tasks_are_active(self) -> None:
-        self.assertEqual(ACTIVE_TASKS, ["cv", "nlp"])
+    def test_all_supported_tasks_are_active(self) -> None:
+        self.assertEqual(ACTIVE_TASKS, ["cv", "nlp", "vilexnorm"])
+
+    @unittest.skipUnless(
+        scoring.TASKS["vilexnorm"].test_input_path and scoring.TASKS["vilexnorm"].test_input_path.is_file(),
+        "Thiếu test input ViLexNorm",
+    )
+    def test_vilexnorm_requirements_use_public_input_not_hidden_labels(self) -> None:
+        req = task_requirements("vilexnorm")
+        self.assertEqual(req["columns"], ["id", "normalized"])
+        self.assertEqual(req["rows"], {"test": 1044})
+        self.assertIsNone(req["labels"])
+        self.assertEqual(len(req["example"]), 3)
+        public_input = pd.read_csv(scoring.TASKS["vilexnorm"].test_input_path, dtype=str)
+        self.assertEqual(req["example"][0], public_input.loc[0, ["id", "original"]].tolist())
 
 
 if __name__ == "__main__":

@@ -232,8 +232,10 @@ with tab_board:
     board_task = task_labels[board_task_label]
     board_splits = task_splits(board_task)
     board_rank_split = ranking_split(board_task)
-    st.caption(f"Xếp hạng theo điểm tốt nhất trên {SPLIT_DISPLAY[board_rank_split]}; hòa thì so Public Test, "
-               "rồi đến đội đạt điểm sớm hơn. Điểm càng cao càng tốt.")
+    tie_rule = "hòa thì so Public Test, rồi đến đội đạt điểm sớm hơn" if "public" in board_splits \
+        else "hòa thì đội đạt điểm sớm hơn đứng trước"
+    st.caption(f"Xếp hạng theo điểm tốt nhất trên {SPLIT_DISPLAY[board_rank_split]}; {tie_rule}. "
+               "Điểm càng cao càng tốt.")
 
     rows = build_leaderboard(all_records, board_task)
     if rows:
