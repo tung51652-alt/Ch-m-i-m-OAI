@@ -103,6 +103,8 @@
   .result ul { margin: 8px 0 0; padding-left: 18px; }
   .result li { margin-bottom: 3px; }
   .notice { margin: 0 0 14px; color: var(--muted); }
+  .save-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .save-box a.primary { display: inline-grid; place-items: center; height: 34px; padding: 0 14px; margin-top: 8px; text-decoration: none; font-size: 13px; }
 
   /* spec table */
   table.spec { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: fixed; }
@@ -245,6 +247,7 @@
   </section>
 </main>
 
+<script src="grader.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -252,7 +255,9 @@
     cv: { id: "tên file ảnh trong thư mục images/ của tập test.", major: "Negative" },
     nlp: { id: "giá trị cột id trong public_test.csv / private_test.csv.", major: "0 (không spam)" },
   };
-  const MAX_UPLOAD_MB = { api: 50, issue: 25 };
+  const MAX_UPLOAD_MB = { api: 50, issue: 25, static: 25 };
+  // Option labels of the GitHub issue form, used to pre-fill it from the page.
+  const ISSUE_TASK_LABEL = { cv: "Tác vụ 1 — Computer Vision: DeepWeeds", nlp: "Tác vụ 2 — NLP: Vietnamese Spam Review Detection" };
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
   const num = (n) => Number(n).toLocaleString("vi-VN");
   const timeFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
@@ -374,7 +379,7 @@
     const req = task.requirements || {};
     const note = TASK_NOTES[taskKey] || {};
     const [idCol, labelCol] = req.columns || ["id", "label"];
-    const mode = data.submit_mode === "api" ? "api" : "issue";
+    const mode = MAX_UPLOAD_MB[data.submit_mode] ? data.submit_mode : "issue";
     const row = (label, ...cells) => el("tr", {}, el("th", { scope: "row" }, label), el("td", {}, ...cells));
 
     const rowsCell = req.rows
@@ -423,14 +428,21 @@
   }
 
   // ---------- submit ----------
+  const repoName = () => data.repository || (() => {
+    const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+    const seg = location.pathname.split("/").filter(Boolean)[0];
+    return m && seg ? `${m[1]}/${seg}` : null;
+  })();
+  const issueUrl = (params) => {
+    const repo = repoName();
+    if (!repo) return "#";
+    const q = new URLSearchParams({ template: "submission.yml", ...params });
+    return `https://github.com/${repo}/issues/new?${q}`;
+  };
+
   function setupSubmit() {
-    if (data.submit_mode !== "api") {
-      const repo = data.repository || (() => {
-        const m = location.hostname.match(/^([^.]+)\.github\.io$/);
-        const seg = location.pathname.split("/").filter(Boolean)[0];
-        return m && seg ? `${m[1]}/${seg}` : null;
-      })();
-      $("issue-link").href = repo ? `https://github.com/${repo}/issues/new?template=submission.yml` : "#";
+    if (data.submit_mode !== "api" && data.submit_mode !== "static") {
+      $("issue-link").href = issueUrl({});
       $("submit-issue").hidden = false;
       // Without the upload form, a task picker in the GitHub panel drives the info panels.
       const picker = el("select", { "aria-label": "Tác vụ" }, ...data.tasks.map((t) => el("option", { value: t.key }, t.name)));
@@ -441,6 +453,7 @@
       return;
     }
     $("submit-api").hidden = false;
+    if (data.submit_mode === "static") $("submit-api").querySelector(".head-meta").textContent = "Chấm ngay trên trình duyệt";
     const savedTeam = store.get("oai-team") || "";
     const teamInput = data.teams && data.teams.length
       ? el("select", { name: "team", id: "team", required: "" },
@@ -485,17 +498,92 @@
       const btn = $("submit-btn");
       btn.disabled = true; btn.textContent = "Đang chấm…";
       try {
+        if (data.submit_mode === "static") return showResult(await gradeInBrowser(team, taskSel.value, splitSel.value, fileInput.files[0]));
         const res = await fetch("api/submit", { method: "POST", headers: authHeaders(), body: new FormData($("form")) });
         if (res.status === 401) { store.del("oai-pw"); return showLogin("Mật khẩu đã thay đổi, vui lòng đăng nhập lại."); }
         const body = await res.json().catch(() => ({ ok: false, message: `Lỗi máy chủ (HTTP ${res.status}).` }));
         showResult(body.ok ? resultBox(body) : errorBox(body.message));
         if (body.ok) await loadData();
       } catch (err) {
-        showResult(errorBox("Không kết nối được máy chủ chấm điểm."));
+        showResult(errorBox(data.submit_mode === "static" ? `Lỗi khi chấm: ${err.message}` : "Không kết nối được máy chủ chấm điểm."));
       } finally {
         btn.disabled = false; btn.textContent = "Chấm điểm";
       }
     });
+  }
+
+  // ---------- grading in the browser (static GitHub Pages) ----------
+  function buildLeaderboard(records, taskKey) {
+    const task = data.tasks.find((t) => t.key === taskKey);
+    const rankSplit = task.ranking_split;
+    const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const ordered = records.filter((r) => r.task === taskKey)
+      .sort((a, b) => cmp(a.submitted_at, b.submitted_at) || cmp(a.id || "", b.id || ""));
+    const teams = new Map();
+    for (const r of ordered) {
+      if (!teams.has(r.team)) {
+        teams.set(r.team, { team: r.team, best: Object.fromEntries(task.splits.map((s) => [s, null])),
+          best_at: Object.fromEntries(task.splits.map((s) => [s, null])), submissions: 0, valid_submissions: 0, last_submitted_at: null });
+      }
+      const e = teams.get(r.team);
+      e.submissions += 1;
+      if (!e.last_submitted_at || r.submitted_at > e.last_submitted_at) e.last_submitted_at = r.submitted_at;
+      if (!r.valid || !(r.split in e.best)) continue;
+      e.valid_submissions += 1;
+      if (e.best[r.split] === null || r.score > e.best[r.split]) { e.best[r.split] = r.score; e.best_at[r.split] = r.submitted_at; }
+    }
+    const key = (e) => [e.best[rankSplit] === null ? 1 : 0, -(e.best[rankSplit] || 0), e.best.public == null ? 1 : 0,
+      -(e.best.public || 0), e.best_at[rankSplit] || e.best_at.public || "~", e.team.toLowerCase()];
+    const rows = [...teams.values()].sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      for (let i = 0; i < ka.length; i += 1) { const c = cmp(ka[i], kb[i]); if (c) return c; }
+      return 0;
+    });
+    let prevKey = null, prevRank = null;
+    rows.forEach((row, i) => {
+      const score = row.best[rankSplit];
+      if (score === null) { row.rank = null; return; }
+      const k = `${score}|${row.best.public ?? ""}`;
+      row.rank = k === prevKey ? prevRank : i + 1;
+      prevKey = k; prevRank = row.rank;
+    });
+    return rows;
+  }
+
+  async function gradeInBrowser(team, taskKey, split, file) {
+    const task = data.tasks.find((t) => t.key === taskKey);
+    const truth = (data.ground_truth[taskKey] || {})[split];
+    if (!truth) return errorBox("Trang chưa có đáp án cho tác vụ/tập này.");
+    const [idCol, labelCol] = task.requirements.columns;
+    let sub;
+    try {
+      sub = await OAIGrader.readSubmission(file);
+    } catch (e) {
+      if (e instanceof OAIGrader.SubmissionReadError) {
+        return resultBox({ submission: { team, task: taskKey, split, valid: false, score: null, metric_name: task.metric,
+          errors: [e.message], warnings: [], stats: {} } });
+      }
+      throw e;
+    }
+    const result = OAIGrader.grade(sub, truth, idCol, labelCol);
+    const submission = { team, task: taskKey, split, ...result };
+    let standing = null;
+    if (result.valid) {
+      const provisional = { id: "~local", team, task: taskKey, split, valid: true, score: result.score, submitted_at: new Date().toISOString() };
+      const rows = buildLeaderboard([...data.history, provisional], taskKey);
+      const row = rows.find((r) => r.team === team);
+      standing = { rank: row.rank, ranked_teams: rows.filter((r) => r.rank).length, best: row.best, ranking_split: task.ranking_split };
+    }
+    const box = resultBox({ submission, standing });
+    if (result.valid) {
+      box.append(el("div", { class: "save-box" },
+        el("div", {}, "Điểm và hạng ở trên là dự kiến, được chấm ngay trên trình duyệt và chưa được lưu. ",
+          "Để đưa lên bảng xếp hạng chung, mở form dưới đây (đã điền sẵn đội, tác vụ, tập) và kéo thả lại file."),
+        el("a", { class: "primary", target: "_blank", rel: "noopener",
+          href: issueUrl({ team, task: ISSUE_TASK_LABEL[taskKey] || "", split: data.split_names[split] }) },
+          "Lưu lên bảng xếp hạng")));
+    }
+    return box;
   }
 
   function showResult(node) { $("result").replaceChildren(node); }
@@ -516,7 +604,8 @@
         warnings);
     }
     const st = body.standing;
-    const rankText = st.rank ? `Hạng ${st.rank} / ${st.ranked_teams}` : `Chưa xếp hạng · cần điểm ${data.split_names[st.ranking_split]}`;
+    const rankText = (st.rank ? `Hạng ${st.rank} / ${st.ranked_teams}` : `Chưa xếp hạng · cần điểm ${data.split_names[st.ranking_split]}`)
+      + (data.submit_mode === "static" ? " (dự kiến)" : "");
     return el("div", { class: "result" },
       el("div", { class: "result-top" }, el("span", { class: "tag" }, "Hợp lệ"), context),
       el("div", { class: "score-line" }, el("span", { class: "score" }, fmt(s.score)), el("span", { class: "rank-text" }, rankText)),

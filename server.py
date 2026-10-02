@@ -87,7 +87,6 @@ async def leaderboard_json(request: Request) -> JSONResponse:
     if not await authorized(request.headers.get(PASSWORD_HEADER)):
         return error("Sai mật khẩu.", 401)
     data = export_site_data(load_records(), REPOSITORY, submit_mode="api")
-    data["teams"] = team_names()
     return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 

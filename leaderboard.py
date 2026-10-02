@@ -303,6 +303,7 @@ def export_site_data(
         "repository": repository,
         "submit_mode": submit_mode,
         "split_names": SPLIT_DISPLAY,
+        "teams": team_names(),
         "tasks": tasks,
         "history": history,
     }
