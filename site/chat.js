@@ -45,6 +45,8 @@
     $("message").disabled = blocked;
     $("send-button").disabled = blocked;
     $("stop-button").hidden = !busy;
+    $("new-session-button").hidden = !session || session.remainingTokens > 0;
+    $("new-session-button").disabled = busy || !session || Boolean(session.inFlight);
   }
 
   function updateSession(nextSession) {
@@ -66,7 +68,14 @@
     $("chat-panel").hidden = true;
     $("setup-panel").hidden = false;
     $("session-meta").hidden = true;
+    $("new-session-button").hidden = true;
     showTicketError(message || "");
+  }
+
+  function resetConversation() {
+    history = [];
+    $("conversation").querySelectorAll(".message").forEach((message) => message.remove());
+    $("empty-state").hidden = false;
   }
 
   async function loadSession() {
@@ -214,6 +223,33 @@
 
   $("stop-button").addEventListener("click", () => {
     if (activeController) activeController.abort();
+  });
+
+  $("new-session-button").addEventListener("click", async () => {
+    if (!session || session.remainingTokens > 0 || session.inFlight || activeController) return;
+    const button = $("new-session-button");
+    button.disabled = true;
+    button.textContent = "Đang tạo...";
+    setStatus("Đang tạo phiên mới...");
+    try {
+      const response = await fetch(api("/api/session/new"), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const body = await responseBody(response);
+      if (!response.ok) {
+        if (response.status === 401) clearSession(`${body.message} Nhập lại mã để tiếp tục.`);
+        throw new Error(body.message || "Không tạo được phiên mới.");
+      }
+      resetConversation();
+      openChat(body.token, body.session);
+      setStatus("Đã tạo phiên mới với 2.000 token.");
+    } catch (error) {
+      if (session) setStatus(error.message || "Không tạo được phiên mới.", true);
+    } finally {
+      button.textContent = "Tạo phiên mới";
+      if (session) setBusy(false);
+    }
   });
 
   $("chat-form").addEventListener("submit", async (event) => {

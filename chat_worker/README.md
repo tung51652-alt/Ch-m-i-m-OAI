@@ -56,7 +56,7 @@ curl -X POST "https://oai-t7-chat.<account>.workers.dev/api/admin/tickets" \
   -d '{"label":"Đội Tùng","count":1,"expiresAt":"2026-10-03T12:00:00+07:00"}'
 ```
 
-Ticket rõ chỉ được trả về trong response này. Gửi riêng ticket cho đội tương ứng. Một ticket đã mở sẽ luôn quay về cùng session và không làm mới quota khi tải lại trang.
+Ticket rõ chỉ được trả về trong response này. Gửi riêng ticket cho đội tương ứng. Một ticket đã mở sẽ quay về session đang hoạt động và không làm mới quota khi tải lại trang. Khi session dùng hết quota, người dùng có thể bấm **Tạo phiên mới**; nếu session đã hết hạn, nhập lại cùng ticket để mở session mới.
 
 ## Chạy local
 
@@ -92,3 +92,5 @@ Practice mode không yêu cầu ticket và không phù hợp cho thi thật.
 - `PRACTICE_MODE`: phải là `false` ở production.
 
 Khi provider không trả usage cuối stream, Worker tính toàn bộ reservation của lượt đó để tránh vượt quota. Mỗi session chỉ được có một request đang chạy.
+
+Mỗi session có quota độc lập. Endpoint `POST /api/session/new` chỉ cấp session kế tiếp khi session đã xác thực dùng hết token; ticket bị khóa hoặc hết hạn không thể tạo thêm session. Các session cũ vẫn được giữ trong D1 để kiểm toán.

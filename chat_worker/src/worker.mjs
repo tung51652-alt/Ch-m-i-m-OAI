@@ -19,6 +19,7 @@ import {
 const HF_CHAT_ENDPOINT = "https://router.huggingface.co/v1/chat/completions";
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 const TICKET_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const SESSION_COLUMNS = "id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at";
 
 function responseJson(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), { status, headers: { ...JSON_HEADERS, ...extraHeaders } });
@@ -86,7 +87,7 @@ async function loadAuthorizedSession(request, env) {
   const payload = await verifySessionToken(bearerToken(request), env.SESSION_SIGNING_KEY);
   const db = requireDatabase(env);
   let row = await db.prepare(
-    "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
+    `SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`,
   ).bind(payload.sid).first();
   if (!row) throw new HttpError(401, "Phiên chat không tồn tại.");
   if (Date.parse(row.expires_at) <= Date.now()) throw new HttpError(401, "Phiên chat đã hết hạn.");
@@ -96,7 +97,7 @@ async function loadAuthorizedSession(request, env) {
       "UPDATE chat_sessions SET reserved_tokens = 0, in_flight = 0, in_flight_at = NULL WHERE id = ? AND in_flight = 1 AND (in_flight_at IS NULL OR in_flight_at < ?)",
     ).bind(row.id, staleBefore).run();
     row = await db.prepare(
-      "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
+      `SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`,
     ).bind(payload.sid).first();
   }
   return row;
@@ -119,8 +120,44 @@ async function createPracticeSession(env) {
     "INSERT INTO chat_sessions (id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, expires_at, created_at) VALUES (?, NULL, ?, 0, 0, 0, ?, ?)",
   ).bind(id, tokenLimit, expiresAt, createdAt).run();
   return db.prepare(
-    "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
+    `SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`,
   ).bind(id).first();
+}
+
+async function createTicketSession(record, env, previousSessionId = null) {
+  const db = requireDatabase(env);
+  const tokenLimit = positiveInteger(env.SESSION_TOKEN_LIMIT, DEFAULT_SESSION_TOKEN_LIMIT, { min: 1, max: 20000 });
+  const ttl = positiveInteger(env.SESSION_TTL_SECONDS, DEFAULT_SESSION_TTL_SECONDS, { min: 300, max: 86400 });
+  const id = randomId();
+  const createdAt = nowIso();
+  const defaultExpiry = Math.floor(Date.now() / 1000) + ttl;
+  const expiry = Math.min(defaultExpiry, parseExpiry(record.expires_at, defaultExpiry));
+  const expiresAt = new Date(expiry * 1000).toISOString();
+  const claim = previousSessionId
+    ? db.prepare(
+      "UPDATE chat_tickets SET claimed_session_id = ?, claimed_at = ? WHERE id = ? AND claimed_session_id = ? AND enabled = 1",
+    ).bind(id, createdAt, record.id, previousSessionId)
+    : db.prepare(
+      "UPDATE chat_tickets SET claimed_session_id = ?, claimed_at = ? WHERE id = ? AND claimed_session_id IS NULL AND enabled = 1",
+    ).bind(id, createdAt, record.id);
+
+  const [claimResult] = await db.batch([
+    claim,
+    db.prepare(
+      "INSERT INTO chat_sessions (id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, expires_at, created_at) VALUES (?, ?, ?, 0, 0, 0, ?, ?)",
+    ).bind(id, record.id, tokenLimit, expiresAt, createdAt),
+  ]);
+
+  if (!claimResult.meta?.changes) {
+    await db.prepare("DELETE FROM chat_sessions WHERE id = ?").bind(id).run();
+    const current = await db.prepare(
+      "SELECT claimed_session_id FROM chat_tickets WHERE id = ? AND enabled = 1",
+    ).bind(record.id).first();
+    if (!current?.claimed_session_id) throw new HttpError(409, "Không thể mở phiên thi. Vui lòng thử lại.");
+    return db.prepare(`SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`).bind(current.claimed_session_id).first();
+  }
+
+  return db.prepare(`SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`).bind(id).first();
 }
 
 async function claimTicketSession(ticket, env) {
@@ -140,43 +177,18 @@ async function claimTicketSession(ticket, env) {
 
   if (record.claimed_session_id) {
     const existing = await db.prepare(
-      "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
+      `SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`,
     ).bind(record.claimed_session_id).first();
-    if (!existing || Date.parse(existing.expires_at) <= Date.now()) {
-      throw new HttpError(401, "Phiên thi của mã này đã kết thúc.");
+    const canContinue = existing
+      && Date.parse(existing.expires_at) > Date.now()
+      && (existing.in_flight || Number(existing.used_tokens) < Number(existing.token_limit));
+    if (canContinue) {
+      return existing;
     }
-    return existing;
+    return createTicketSession(record, env, record.claimed_session_id);
   }
 
-  const tokenLimit = positiveInteger(env.SESSION_TOKEN_LIMIT, DEFAULT_SESSION_TOKEN_LIMIT, { min: 1, max: 20000 });
-  const ttl = positiveInteger(env.SESSION_TTL_SECONDS, DEFAULT_SESSION_TTL_SECONDS, { min: 300, max: 86400 });
-  const id = randomId();
-  const createdAt = nowIso();
-  const defaultExpiry = Math.floor(Date.now() / 1000) + ttl;
-  const expiry = Math.min(defaultExpiry, parseExpiry(record.expires_at, defaultExpiry));
-  const expiresAt = new Date(expiry * 1000).toISOString();
-
-  const [claimResult] = await db.batch([
-    db.prepare(
-      "UPDATE chat_tickets SET claimed_session_id = ?, claimed_at = ? WHERE id = ? AND claimed_session_id IS NULL AND enabled = 1",
-    ).bind(id, createdAt, record.id),
-    db.prepare(
-      "INSERT INTO chat_sessions (id, ticket_id, token_limit, used_tokens, reserved_tokens, in_flight, expires_at, created_at) VALUES (?, ?, ?, 0, 0, 0, ?, ?)",
-    ).bind(id, record.id, tokenLimit, expiresAt, createdAt),
-  ]);
-
-  if (!claimResult.meta?.changes) {
-    await db.prepare("DELETE FROM chat_sessions WHERE id = ?").bind(id).run();
-    record = await db.prepare("SELECT claimed_session_id FROM chat_tickets WHERE id = ?").bind(record.id).first();
-    if (!record?.claimed_session_id) throw new HttpError(409, "Không thể mở phiên thi. Vui lòng thử lại.");
-    return db.prepare(
-      "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
-    ).bind(record.claimed_session_id).first();
-  }
-
-  return db.prepare(
-    "SELECT id, token_limit, used_tokens, reserved_tokens, in_flight, in_flight_at, expires_at FROM chat_sessions WHERE id = ?",
-  ).bind(id).first();
+  return createTicketSession(record, env);
 }
 
 async function openSession(request, env) {
@@ -188,6 +200,31 @@ async function openSession(request, env) {
 async function getSession(request, env) {
   const row = await loadAuthorizedSession(request, env);
   return responseJson({ ok: true, session: { ...sessionView(row), practice: practiceMode(env) } });
+}
+
+async function createNextSession(request, env) {
+  const current = await loadAuthorizedSession(request, env);
+  if (current.in_flight) throw new HttpError(409, "Hãy chờ câu trả lời hiện tại hoàn tất trước khi tạo phiên mới.");
+  if (Number(current.used_tokens) < Number(current.token_limit)) {
+    throw new HttpError(409, "Chỉ có thể tạo phiên mới sau khi dùng hết token của phiên hiện tại.");
+  }
+  if (practiceMode(env) || !current.ticket_id) {
+    return responseJson(await sessionResponse(await createPracticeSession(env), env));
+  }
+
+  const db = requireDatabase(env);
+  const record = await db.prepare(
+    "SELECT id, claimed_session_id, expires_at FROM chat_tickets WHERE id = ? AND enabled = 1",
+  ).bind(current.ticket_id).first();
+  if (!record) throw new HttpError(401, "Mã phiên thi không còn hiệu lực.");
+  if (record.expires_at && Date.parse(record.expires_at) <= Date.now()) {
+    throw new HttpError(401, "Mã phiên thi đã hết hạn.");
+  }
+  const next = record.claimed_session_id === current.id
+    ? await createTicketSession(record, env, current.id)
+    : await db.prepare(`SELECT ${SESSION_COLUMNS} FROM chat_sessions WHERE id = ?`).bind(record.claimed_session_id).first();
+  if (!next) throw new HttpError(409, "Không thể tạo phiên mới. Vui lòng thử lại.");
+  return responseJson(await sessionResponse(next, env));
 }
 
 async function releaseReservation(db, sessionId) {
@@ -374,6 +411,7 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/api/session") return openSession(request, env);
   if (request.method === "GET" && url.pathname === "/api/session") return getSession(request, env);
+  if (request.method === "POST" && url.pathname === "/api/session/new") return createNextSession(request, env);
   if (request.method === "POST" && url.pathname === "/api/chat") return chat(request, env);
   if (request.method === "POST" && url.pathname === "/api/admin/tickets") return createTickets(request, env);
   throw new HttpError(404, "Không tìm thấy endpoint.");
