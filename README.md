@@ -1,6 +1,6 @@
 # OAI T7 — Local Grading System
 
-Web Streamlit chạy hoàn toàn trên máy local để chấm ba tác vụ OAI T7. DeepWeeds và Vietnamese Spam Review Detection có Public/Private Test; ViLexNorm có một Test Set. Ground truth chỉ được đọc nội bộ và không có chức năng tải xuống.
+Hệ thống chấm local cho hai tác vụ OAI T7: DeepWeeds (phân loại ảnh 9 lớp) và Vietnamese Spam Review Detection (4 nhãn `0`–`3`), mỗi tác vụ có Public/Private Test, metric Macro-F1. Ground truth chỉ được đọc nội bộ và không có chức năng tải xuống.
 
 ## 1. Cài đặt
 
@@ -11,28 +11,46 @@ pip install -r requirements.txt
 
 ## 2. Chạy
 
+### Web nộp bài + bảng xếp hạng (khuyên dùng)
+
+```bash
+GRADER_DATA_ROOT=~/Downloads/OAI_T7 python server.py --port 8000
+```
+
+Mở <http://localhost:8000>. Web có hai tab: **Nộp bài** (chọn đội trong danh sách `teams.json`, tác vụ, Public/Private, file CSV/ZIP → điểm Macro-F1 và thứ hạng) và **Bảng xếp hạng** (rank theo từng tác vụ và lịch sử nộp). Mọi lần nộp được lưu ở `results/submissions/`.
+
+`GRADER_DATA_ROOT` là thư mục chứa `Tac_vu_1_CV/organizer/` và `Tac_vu_2_NLP/organizer/` (mặc định là thư mục cha của repo). `MAX_DAILY_SUBMISSIONS` giới hạn số bài hợp lệ/ngày/đội/tập (mặc định không giới hạn).
+
+Tab **Nộp bài** hiển thị luôn *Yêu cầu file nộp* (định dạng, cột, số dòng, danh sách nhãn, ví dụ) và *Chỉ số đánh giá* (công thức Macro-F1, cách xếp hạng) theo tác vụ/tập đang chọn.
+
+### Mật khẩu
+
+Cả trang (xem bảng xếp hạng và nộp bài) cần mật khẩu. Không dùng database: mật khẩu nằm trong file `.grader_password` (đã gitignore), tự sinh ở lần chạy đầu và in ra terminal. Đổi mật khẩu: sửa file đó (hoặc đặt biến `GRADER_PASSWORD`) rồi khởi động lại server; người đang đăng nhập sẽ phải nhập lại.
+
+Bản tĩnh trên github.io không có server, nên `leaderboard.json` được mã hóa AES-256-GCM bằng mật khẩu (secret `GRADER_PASSWORD` của repo) và trình duyệt giải mã sau khi đăng nhập. Nhớ cập nhật secret khi đổi mật khẩu:
+
+```bash
+gh secret set GRADER_PASSWORD < .grader_password
+```
+
+### App Streamlit cho ban tổ chức (có F1 theo lớp, confusion matrix)
+
 ```bash
 streamlit run app.py --server.address 0.0.0.0
 ```
 
-Truy cập trên chính máy đang chạy:
-
-<http://localhost:8501>
-
-Truy cập từ thiết bị khác trong cùng mạng LAN:
-
-<http://192.168.1.13:8501>
-
-Địa chỉ IP LAN có thể thay đổi khi máy kết nối lại mạng. Có thể xem URL LAN mới trong phần `Network URL` mà Streamlit in ra khi khởi động.
+Truy cập trên chính máy đang chạy: <http://localhost:8501>. Thiết bị khác trong cùng mạng LAN dùng `Network URL` mà Streamlit in ra khi khởi động.
 
 ## 3. Cách dùng
 
-1. Nhập **Tên đội**, chọn một trong ba tác vụ.
-2. Chọn Public/Private Test; với ViLexNorm selector được cố định ở Test Set.
+1. Nhập **Tên đội**, chọn tác vụ (DeepWeeds hoặc Spam Review).
+2. Chọn Public Test hoặc Private Test.
 3. Upload file CSV, hoặc ZIP chứa đúng một file có tên `submission.csv` hay `output.csv`.
-4. Bấm **CHẤM ĐIỂM**.
+4. Bấm **Chấm điểm**.
 
-Hệ thống kiểm tra schema, số dòng, ID thiếu/lạ/trùng, prediction rỗng và label không hợp lệ trước khi chấm. Dự đoán được căn theo ID nên submission có thể sắp xếp dòng theo thứ tự bất kỳ. Hai tác vụ phân loại dùng Macro F1; ViLexNorm dùng ERR và hiển thị thêm Token Accuracy, Normalization Precision, Normalization Recall.
+Nhãn hợp lệ: DeepWeeds `Chinee apple, Lantana, Negative, Parkinsonia, Parthenium, Prickly acacia, Rubber vine, Siam weed, Snake weed`; Spam Review `0, 1, 2, 3`. Số dòng: DeepWeeds public 2,715 / private 2,748; Spam Review public 1,590 / private 3,974.
+
+Hệ thống kiểm tra schema, số dòng, ID thiếu/lạ/trùng, prediction rỗng và label không hợp lệ trước khi chấm. Dự đoán được căn theo ID nên submission có thể sắp xếp dòng theo thứ tự bất kỳ. Cả hai tác vụ dùng Macro-F1 (`sklearn.metrics.f1_score(average="macro")`, giống `organizer/evaluate.py`).
 
 Mọi lần chấm (kể cả không hợp lệ) đều được lưu vào `results/submissions/`; tab **Bảng xếp hạng** hiển thị rank và lịch sử nộp.
 
@@ -71,7 +89,7 @@ Quick Tunnel chỉ phù hợp cho buổi luyện tập ngắn, không có cam k�
 GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động như sau:
 
 ```
-Đội mở Issue "Nộp bài chấm điểm" + đính kèm CSV/ZIP
+Đội mở Issue "Nộp bài chấm điểm", chọn Đội/Tác vụ/Tập, đính kèm CSV/ZIP (hoặc dán link raw của Gist)
   → GitHub Actions (grade.yml) giải mã đáp án bằng secret, chấm điểm
   → lưu kết quả vào results/submissions/gh-<số issue>.json (commit vào main)
   → comment điểm + thứ hạng vào issue, gắn nhãn, đóng issue
@@ -86,7 +104,16 @@ GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động nh�
 - DeepWeeds và Spam Review: lưu điểm tốt nhất trên **Public** và **Private** của mỗi đội; xếp hạng theo Private, hòa thì so Public, vẫn hòa thì đội đạt điểm sớm hơn đứng trên (cùng hạng nếu bằng cả hai điểm). Đội chưa có điểm Private hiển thị cuối bảng, chưa có hạng.
 - ViLexNorm: xếp hạng theo điểm ERR tốt nhất trên Test Set.
 - Giới hạn mặc định **5 bài hợp lệ/ngày cho mỗi đội, mỗi tác vụ, mỗi tập** (reset 00:00 giờ Việt Nam) để hạn chế dò đáp án Private. Đổi bằng biến `MAX_DAILY_SUBMISSIONS` (đặt `0` = không giới hạn) tại *Settings → Secrets and variables → Actions → Variables*.
-- Mặc định tên đội = GitHub username. Muốn gom nhiều thành viên vào một đội hoặc chỉ cho phép đội đã đăng ký: copy `teams.example.json` thành `teams.json`, sửa rồi commit.
+- Danh sách đội nằm trong `teams.json` (hiện có: Kiên, Tùng, Thanh). Web local hiển thị các đội này trong ô chọn và chỉ chấp nhận các tên này. Khi nộp qua GitHub Issue, điền GitHub username của thành viên vào danh sách của từng đội để gom về đúng đội; để trống `[]` thì tên đội = GitHub username.
+
+Trang github.io: <https://tung51652-alt.github.io/Ch-m-i-m-OAI/> (cần mật khẩu, giống bản local).
+
+Nộp từ dòng lệnh thay vì kéo thả file:
+
+```bash
+gh gist create output.csv          # in ra https://gist.github.com/<user>/<id>
+gh api gists/<id> --jq '.files[].raw_url'   # dán link raw này vào ô "File submission"
+```
 
 ### Thiết lập lần đầu (chủ repo)
 
@@ -102,13 +129,15 @@ GitHub Pages chỉ host trang tĩnh, nên hệ thống online hoạt động nh�
    git add secure/ground_truth.tar.gz.enc
    git commit -m "Update ground truth" && git push
    ```
-4. Vào tab **Actions → Deploy leaderboard to GitHub Pages → Run workflow** để deploy lần đầu.
-5. Thử nộp một bài: *Issues → New issue → Nộp bài chấm điểm*.
+4. Đặt secret `GRADER_PASSWORD` (mật khẩu trang, dùng để mã hóa dữ liệu trên github.io): `gh secret set GRADER_PASSWORD < .grader_password`.
+5. Vào tab **Actions → Deploy leaderboard to GitHub Pages → Run workflow** để deploy lần đầu (sau đó mỗi lần push lên `main` tự deploy).
+6. Thử nộp một bài: *Issues → New issue → Nộp bài chấm điểm*.
 
 ### Vận hành
 
 - **Chấm lại một issue** (ví dụ lúc đáp án chưa sẵn sàng, issue có nhãn `needs-organizer`): *Actions → Grade submission → Run workflow*, nhập số issue.
 - **Xóa một lần nộp**: xóa file `results/submissions/gh-<số issue>.json`, commit và push; trang tự build lại.
+- **Xem trước trang github.io trên máy**: `python scripts/serve_site.py` rồi mở <http://localhost:8000> (dữ liệu lấy trực tiếp từ `results/submissions/`, kể cả bài chấm bằng app local).
 - **Xem toàn bộ lịch sử**: trên trang github.io (mục *Lịch sử nộp bài*) hoặc thư mục `results/submissions/`.
 - Lưu ý: issue là công khai, nên các đội có thể tải file dự đoán của nhau. Điểm Private hiện công khai ngay khi nộp.
 

@@ -3,198 +3,592 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OAI T7 Leaderboard</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<title>OAI T7 Grader</title>
 <style>
   :root {
-    --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
-    --accent: #2f5bd3; --accent-soft: #e8eefc; --ok: #1f7a4d; --bad: #b3261e; --rank-col: #f3f6fe;
-    --gold: #c9a227; --silver: #9aa3ad; --bronze: #b0743f;
+    --bg: #f4f5f7; --surface: #ffffff; --subtle: #f8f9fb; --text: #16181d; --muted: #5f6672; --faint: #8a909b;
+    --line: #e2e5ea; --line-strong: #cfd4dc;
+    --accent: #1d4ed8; --accent-soft: #eef3ff; --on-accent: #ffffff;
+    --ok: #157347; --ok-soft: #edf7f1; --bad: #b42318; --bad-soft: #fdf1f0; --rank-col: #f3f6fd;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+    --math: "Cambria Math", "STIX Two Math", "Latin Modern Math", Cambria, Georgia, "Times New Roman", serif;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #161615; --surface: #1f1f1e; --text: #ececea; --muted: #a0a09a; --line: #34342f;
-      --accent: #8aa8ff; --accent-soft: #263152; --ok: #5fcf95; --bad: #ff8a80; --rank-col: #232a3d;
+      --bg: #0f1115; --surface: #171a20; --subtle: #1c2027; --text: #e7e9ee; --muted: #a3a9b4; --faint: #7d8490;
+      --line: #2a2f38; --line-strong: #39404b;
+      --accent: #7aa2ff; --accent-soft: #1d2740; --on-accent: #0b1020;
+      --ok: #5cc98d; --ok-soft: #14271d; --bad: #ff8a7a; --bad-soft: #2d1714; --rank-col: #1b2233;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #161615; --surface: #1f1f1e; --text: #ececea; --muted: #a0a09a; --line: #34342f;
-    --accent: #8aa8ff; --accent-soft: #263152; --ok: #5fcf95; --bad: #ff8a80; --rank-col: #232a3d;
+    --bg: #0f1115; --surface: #171a20; --subtle: #1c2027; --text: #e7e9ee; --muted: #a3a9b4; --faint: #7d8490;
+    --line: #2a2f38; --line-strong: #39404b;
+    --accent: #7aa2ff; --accent-soft: #1d2740; --on-accent: #0b1020;
+    --ok: #5cc98d; --ok-soft: #14271d; --bad: #ff8a7a; --bad-soft: #2d1714; --rank-col: #1b2233;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
-  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
-  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  h2 { font-size: 18px; margin: 0 0 12px; }
-  .muted { color: var(--muted); }
-  .small { font-size: 13px; }
-  .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
-    padding: 10px 18px; border-radius: 8px; }
-  :root[data-theme="dark"] .btn { color: #10162a; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn { color: #10162a; } }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-  .tab { border: 1px solid var(--line); background: transparent; color: var(--text); padding: 7px 14px;
-    border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
-  .tab[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .table-scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.rankcol, th.rankcol { background: var(--rank-col); }
-  td.team { font-weight: 600; }
-  .rank { display: inline-flex; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center;
-    font-weight: 700; font-variant-numeric: tabular-nums; }
-  .r1 { background: var(--gold); color: #fff; } .r2 { background: var(--silver); color: #fff; } .r3 { background: var(--bronze); color: #fff; }
-  .ok { color: var(--ok); } .bad { color: var(--bad); }
-  .err { white-space: normal; color: var(--bad); font-size: 13px; max-width: 360px; }
-  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-  select, input[type="search"] { font: inherit; font-size: 14px; padding: 7px 10px; border-radius: 8px;
-    border: 1px solid var(--line); background: var(--surface); color: var(--text); }
-  input[type="search"] { flex: 1; min-width: 160px; }
-  .empty { padding: 24px 8px; text-align: center; color: var(--muted); }
-  ol.steps { padding-left: 20px; margin: 0; } ol.steps li { margin-bottom: 6px; }
-  code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--subtle); border: 1px solid var(--line); padding: 0 5px; border-radius: 4px; }
   a { color: var(--accent); }
-  .more { margin-top: 12px; }
-  .more button { font: inherit; background: none; border: 1px solid var(--line); color: var(--text); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- top bar ---------- */
+  .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: stretch; gap: 32px; height: 56px; padding: 0 24px;
+    background: var(--surface); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .brand b { font-size: 15px; letter-spacing: -0.01em; }
+  .brand span { color: var(--muted); padding-left: 10px; border-left: 1px solid var(--line); }
+  .tabs { display: flex; align-items: stretch; gap: 4px; }
+  .tabs button { border: 0; background: none; padding: 0 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button:hover { color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .bar-meta { margin-left: auto; display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .link-btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .link-btn:hover { background: var(--subtle); }
+
+  main { padding: 20px 24px 40px; }
+
+  /* ---------- panels ---------- */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; }
+  .panel-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 16px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+  .overline { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+  .head-meta { color: var(--muted); font-size: 12.5px; }
+  .panel-body { padding: 18px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--subtle); }
+  .section-head h3 { margin: 0; font-size: 13px; font-weight: 650; }
+  .section-head select { padding: 4px 8px; font-size: 13px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
+
+  /* ---------- submit view ---------- */
+  .submit-layout { display: grid; grid-template-columns: minmax(340px, 5fr) 8fr; gap: 20px; align-items: start; }
+  .info-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 20px; align-items: start; }
+  @media (max-width: 1020px) { .submit-layout { grid-template-columns: 1fr; } }
+
+  form { display: grid; gap: 16px; }
+  .field { display: grid; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .field input, .field select { height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--surface); font-size: 14px; font-weight: 400; color: var(--text); width: 100%; }
+  .drop { position: relative; display: block; border: 1px dashed var(--line-strong); border-radius: 6px; padding: 18px 14px; text-align: center;
+    color: var(--muted); background: var(--subtle); cursor: pointer; font-size: 13.5px; font-weight: 400; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop.has-file { border-style: solid; border-color: var(--accent); color: var(--text); background: var(--surface); }
+  .drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .drop b { color: var(--accent); font-weight: 600; }
+  .primary { height: 40px; border: 0; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-weight: 650; cursor: pointer; }
+  .primary:hover { filter: brightness(1.08); }
+  .primary:disabled { opacity: .6; cursor: progress; }
+
+  #result:not(:empty) { margin-top: 18px; }
+  .result { border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 6px; background: var(--ok-soft); padding: 14px 16px; }
+  .result.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+  .result-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12.5px; color: var(--muted); }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 7px; border-radius: 4px;
+    color: var(--ok); border: 1px solid currentColor; }
+  .result.bad .tag { color: var(--bad); }
+  .score-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin: 8px 0 10px; }
+  .score { font-family: var(--mono); font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+  .rank-text { font-weight: 650; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+  .kv div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .kv dt { font-size: 11.5px; color: var(--muted); }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 14px; }
+  .result ul { margin: 8px 0 0; padding-left: 18px; }
+  .result li { margin-bottom: 3px; }
+  .notice { margin: 0 0 14px; color: var(--muted); }
+
+  /* spec table */
+  table.spec { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: fixed; }
+  table.spec th { width: 118px; text-align: left; vertical-align: top; font-weight: 600; color: var(--muted); padding: 10px 14px 10px 18px;
+    border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.spec td { padding: 10px 18px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  @media (max-width: 520px) {
+    table.spec, table.spec tbody, table.spec tr, table.spec th, table.spec td { display: block; width: auto; }
+    table.spec th { padding: 10px 16px 2px; border-bottom: 0; }
+    table.spec td { padding: 0 16px 10px; }
+  }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .labels { display: flex; flex-wrap: wrap; gap: 5px; }
+  pre.example { margin: 0; font-family: var(--mono); font-size: 12.5px; background: var(--subtle); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; overflow-x: auto; }
+  .foot { padding: 12px 18px; color: var(--muted); font-size: 12.5px; }
+
+  /* math */
+  .eqs { display: grid; gap: 16px; }
+  .eq { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--math); font-size: 17px; }
+  .frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; line-height: 1.3; }
+  .frac > span { padding: 0 4px; }
+  .frac > span:first-child { border-bottom: 1px solid currentColor; }
+  .bigop { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
+  .bigop .sym { font-size: 26px; line-height: 1.05; }
+  .bigop small { font-size: 11px; }
+  .eq sub { font-size: 11px; }
+  ul.notes { margin: 18px 0 0; padding: 14px 0 0 18px; border-top: 1px solid var(--line); font-size: 13.5px; }
+  ul.notes li { margin-bottom: 6px; }
+
+  /* ---------- rank view ---------- */
+  .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(640px, 100%), 1fr)); gap: 20px; align-items: start; }
+  .table-scroll { overflow-x: auto; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.data th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+    padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface); }
+  table.data td { padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.data th:first-child, table.data td:first-child { padding-left: 18px; }
+  table.data th:last-child, table.data td:last-child { padding-right: 18px; }
+  table.data tbody tr:hover td { background: var(--subtle); }
+  table.data tbody tr:last-child td { border-bottom: 0; }
+  .num { text-align: right !important; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th.num { font-family: inherit; }
+  table.data .rankcol { background: var(--rank-col); }
+  td.rank { font-family: var(--mono); font-weight: 700; width: 56px; color: var(--muted); }
+  td.rank.top { color: var(--accent); }
+  td.team { font-weight: 600; }
+  tr.me td { background: var(--accent-soft) !important; }
+  .ok-text { color: var(--ok); }
+  table.data td.err { white-space: normal; color: var(--bad); font-size: 12.5px; min-width: 260px; }
+  td.empty { text-align: center !important; color: var(--faint); padding: 22px 12px !important; }
+  .more { padding: 10px 18px; border-top: 1px solid var(--line); }
+  .more button { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
+
+  /* ---------- login ---------- */
+  .login-wrap { min-height: calc(100vh - 56px); display: grid; place-items: center; padding: 24px 16px; }
+  .login { width: min(400px, 100%); }
+  .login-error { color: var(--bad); font-size: 13px; }
+
+  @media (max-width: 720px) {
+    .topbar { gap: 0 12px; padding: 0 16px; height: auto; flex-wrap: wrap; }
+    .brand { height: 48px; }
+    .tabs { order: 3; width: 100%; height: 40px; }
+    .bar-meta #updated { display: none; }
+    main { padding: 16px 12px 32px; }
+    .login-wrap { min-height: auto; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>OAI T7 Leaderboard</h1>
-      <div class="muted small" id="updated">Đang tải…</div>
+<header class="topbar">
+  <div class="brand"><b>OAI T7</b><span>Hệ thống chấm điểm</span></div>
+  <nav class="tabs" id="tabs" role="tablist" hidden>
+    <button type="button" role="tab" data-view="submit" aria-selected="true">Nộp bài</button>
+    <button type="button" role="tab" data-view="rank" aria-selected="false">Bảng xếp hạng</button>
+  </nav>
+  <div class="bar-meta">
+    <span id="updated"></span>
+    <button type="button" class="link-btn" id="logout" hidden>Đăng xuất</button>
+  </div>
+</header>
+
+<div class="login-wrap" id="view-login" hidden>
+  <div class="panel login">
+    <div class="panel-head"><h2>Đăng nhập</h2></div>
+    <div class="panel-body">
+      <form id="login-form" novalidate>
+        <label class="field">Mật khẩu
+          <input type="password" id="login-pw" autocomplete="current-password" required>
+        </label>
+        <div class="login-error" id="login-error" hidden></div>
+        <button class="primary" type="submit" id="login-btn">Đăng nhập</button>
+      </form>
     </div>
-    <a class="btn" id="submit-link" href="#" target="_blank" rel="noopener">Nộp bài</a>
-  </header>
-
-  <section class="card">
-    <div class="tabs" role="tablist" id="tabs"></div>
-    <div class="muted small" id="metric-note" style="margin-bottom:10px"></div>
-    <div class="table-scroll"><table id="board"></table></div>
-  </section>
-
-  <section class="card">
-    <h2>Lịch sử nộp bài</h2>
-    <div class="filters">
-      <select id="f-task" aria-label="Lọc tác vụ"><option value="">Tất cả tác vụ</option></select>
-      <select id="f-status" aria-label="Lọc trạng thái">
-        <option value="">Mọi trạng thái</option><option value="ok">Hợp lệ</option><option value="bad">Không hợp lệ</option>
-      </select>
-      <input type="search" id="f-team" placeholder="Tìm đội…" aria-label="Tìm đội">
-    </div>
-    <div class="table-scroll"><table id="history"></table></div>
-    <div class="more" id="more" hidden><button type="button">Xem thêm</button></div>
-  </section>
-
-  <section class="card">
-    <h2>Cách nộp bài</h2>
-    <ol class="steps">
-      <li>Bấm <b>Nộp bài</b> (cần đăng nhập GitHub), chọn tác vụ và tập đánh giá.</li>
-      <li>Kéo thả file <code>.csv</code> hoặc <code>.zip</code> (chứa <code>submission.csv</code>/<code>output.csv</code>) vào ô <i>File submission</i>, chờ upload xong rồi bấm <b>Submit</b>.</li>
-      <li>Sau ~1 phút bot comment điểm vào issue; bảng xếp hạng cập nhật sau đó ~1 phút.</li>
-    </ol>
-    <p class="muted small" style="margin:12px 0 0">Schema: DeepWeeds <code>image_id,label</code> · Spam Review <code>id,label</code> · ViLexNorm <code>id,normalized</code>.
-      Xếp hạng theo điểm tốt nhất trên Private Test (ViLexNorm: Test Set); hòa thì so Public, rồi đến đội đạt điểm sớm hơn.</p>
-  </section>
+  </div>
 </div>
+
+<main id="app" hidden>
+  <section id="view-submit" class="submit-layout" hidden>
+    <div class="panel" id="submit-api" hidden>
+      <div class="panel-head"><h2>Nộp bài</h2><span class="head-meta">Mỗi lần nộp chấm một tập đánh giá</span></div>
+      <div class="panel-body">
+        <form id="form" novalidate>
+          <label class="field" id="team-field">Đội</label>
+          <label class="field">Tác vụ
+            <select name="task" id="task"></select>
+          </label>
+          <label class="field">Tập đánh giá
+            <select name="split" id="split"></select>
+          </label>
+          <div class="field">File dự đoán
+            <label class="drop" id="drop">
+              <input type="file" name="file" id="file" accept=".csv,.zip">
+              <span id="drop-text"></span>
+            </label>
+          </div>
+          <button class="primary" type="submit" id="submit-btn">Chấm điểm</button>
+        </form>
+        <div id="result" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="submit-issue" hidden>
+      <div class="panel-head"><h2>Nộp bài qua GitHub</h2></div>
+      <div class="panel-body">
+        <p class="notice">Mở form nộp bài, chọn tác vụ và tập đánh giá, kéo thả file <code>.csv</code> hoặc <code>.zip</code> rồi bấm Submit.
+          Kết quả được comment vào issue sau khoảng một phút.</p>
+        <a class="primary" style="display:inline-grid;place-items:center;padding:0 18px;text-decoration:none" id="issue-link" href="#" target="_blank" rel="noopener">Mở form nộp bài</a>
+      </div>
+    </div>
+
+    <div class="info-col">
+      <div class="panel" id="req-card"></div>
+      <div class="panel" id="metric-card"></div>
+    </div>
+  </section>
+
+  <section id="view-rank" hidden>
+    <div class="boards" id="boards"></div>
+  </section>
+</main>
 
 <script>
 (function () {
+  const $ = (id) => document.getElementById(id);
+  const TASK_NOTES = {
+    cv: { id: "tên file ảnh trong thư mục images/ của tập test.", major: "Negative" },
+    nlp: { id: "giá trị cột id trong public_test.csv / private_test.csv.", major: "0 (không spam)" },
+  };
+  const MAX_UPLOAD_MB = { api: 50, issue: 25 };
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
+  const num = (n) => Number(n).toLocaleString("vi-VN");
   const timeFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
   const fmtTime = (iso) => (iso ? timeFmt.format(new Date(iso)) : "—");
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* storage unavailable */ } },
+  };
   const el = (tag, attrs, ...children) => {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
       if (k === "class") node.className = v; else node.setAttribute(k, v);
     }
-    for (const c of children) if (c !== null && c !== undefined) node.append(c instanceof Node ? c : String(c));
+    for (const c of children) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : String(c));
     return node;
   };
+  class AuthError extends Error {}
 
-  function repoFromLocation() {
-    const m = location.hostname.match(/^([^.]+)\.github\.io$/);
-    const seg = location.pathname.split("/").filter(Boolean)[0];
-    return m && seg ? `${m[1]}/${seg}` : null;
+  let data = null, submitReady = false, currentView = "submit";
+
+  // ---------- auth + data ----------
+  const authHeaders = () => ({ "X-Grader-Password": encodeURIComponent(store.get("oai-pw") || "") });
+
+  async function decryptPayload(env, password) {
+    if (!window.crypto || !crypto.subtle) throw new Error("Trình duyệt không hỗ trợ giải mã (cần mở trang qua HTTPS).");
+    const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: bytes(env.salt), iterations: env.iterations, hash: "SHA-256" },
+      base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    try {
+      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(env.iv) }, key, bytes(env.data));
+      return JSON.parse(new TextDecoder().decode(plain));
+    } catch (e) {
+      throw new AuthError("Sai mật khẩu.");
+    }
   }
 
-  let data, activeTask, historyLimit = 50;
+  async function loadData() {
+    const password = store.get("oai-pw") || "";
+    const r = await fetch("leaderboard.json", { cache: "no-store", headers: authHeaders() });
+    if (r.status === 401) throw new AuthError(password ? "Sai mật khẩu." : "");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    let json = await r.json();
+    if (json.encrypted) {
+      if (!password) throw new AuthError("");
+      json = await decryptPayload(json, password);
+    }
+    data = json;
+    $("updated").textContent = `Cập nhật ${fmtTime(data.generated_at)} · ${num(data.history.length)} lần nộp`;
+    renderBoards();
+  }
 
-  function renderTabs() {
-    const tabs = document.getElementById("tabs");
-    tabs.replaceChildren(...data.tasks.map((t) => {
-      const b = el("button", { class: "tab", role: "tab", "aria-selected": String(t.key === activeTask) }, t.name);
-      b.addEventListener("click", () => { activeTask = t.key; history.replaceState(null, "", `#${t.key}`); renderTabs(); renderBoard(); });
-      return b;
+  function showLogin(message) {
+    data = null;
+    $("app").hidden = true;
+    $("tabs").hidden = true;
+    $("logout").hidden = true;
+    $("updated").textContent = "";
+    $("view-login").hidden = false;
+    $("login-error").hidden = !message;
+    $("login-error").textContent = message || "";
+    $("login-pw").focus();
+  }
+
+  async function start() {
+    try {
+      await loadData();
+    } catch (e) {
+      if (e instanceof AuthError) return showLogin(e.message);
+      $("view-login").hidden = true;
+      $("updated").textContent = `Không tải được dữ liệu (${e.message})`;
+      return;
+    }
+    $("view-login").hidden = true;
+    $("app").hidden = false;
+    $("tabs").hidden = false;
+    $("logout").hidden = false;
+    if (!submitReady) { setupSubmit(); submitReady = true; }
+    showView(currentView);
+  }
+
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const password = $("login-pw").value;
+    if (!password) return showLogin("Vui lòng nhập mật khẩu.");
+    const btn = $("login-btn");
+    btn.disabled = true; btn.textContent = "Đang kiểm tra…";
+    store.set("oai-pw", password);
+    await start();
+    if (!data) store.del("oai-pw");
+    else $("login-pw").value = "";
+    btn.disabled = false; btn.textContent = "Đăng nhập";
+  });
+  $("logout").addEventListener("click", () => { store.del("oai-pw"); showLogin(""); });
+
+  // ---------- tabs ----------
+  function showView(view) {
+    currentView = view;
+    document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+    $("view-submit").hidden = view !== "submit";
+    $("view-rank").hidden = view !== "rank";
+    if (location.hash.slice(1) !== view) history.replaceState(null, "", `#${view}`);
+  }
+  document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+
+  // ---------- requirements + metric ----------
+  const panelHead = (title, meta, overline) => el("div", { class: "panel-head" },
+    el("div", {}, overline ? el("span", { class: "overline" }, overline) : null, el("h2", {}, title)),
+    meta ? el("span", { class: "head-meta" }, meta) : null);
+  const sub = (t) => el("sub", {}, t);
+  const v = (name, s) => el("span", {}, name, s ? sub(s) : null);  // one math term, e.g. TP_c
+  const op = (t) => el("span", {}, t);
+  const frac = (top, bottom) => el("span", { class: "frac" }, el("span", {}, ...top), el("span", {}, ...bottom));
+
+  function renderInfo(taskKey, split) {
+    const task = data.tasks.find((t) => t.key === taskKey);
+    const req = task.requirements || {};
+    const note = TASK_NOTES[taskKey] || {};
+    const [idCol, labelCol] = req.columns || ["id", "label"];
+    const mode = data.submit_mode === "api" ? "api" : "issue";
+    const row = (label, ...cells) => el("tr", {}, el("th", { scope: "row" }, label), el("td", {}, ...cells));
+
+    const rowsCell = req.rows
+      ? [el("div", {}, ...task.splits.map((s, i) => el("span", { class: !split || s === split ? "" : "hint" },
+          i ? "   ·   " : "", el("b", { class: "num" }, num(req.rows[s])), ` ${data.split_names[s]}`))),
+         el("div", { class: "hint" }, "Mỗi ", el("code", {}, idCol), " xuất hiện đúng một lần; không thiếu, không trùng, không lạ.")]
+      : ["Bằng số mẫu của tập test; mỗi ", el("code", {}, idCol), " đúng một lần."];
+    const labelsCell = req.labels
+      ? [el("div", { class: "labels" }, ...req.labels.map((l) => el("code", {}, l))),
+         el("div", { class: "hint" }, `${req.labels.length} nhãn; viết đúng chính tả, phân biệt hoa/thường.`)]
+      : ["Theo miền nhãn trong train.csv."];
+
+    $("req-card").replaceChildren(
+      panelHead("Yêu cầu file nộp", task.name),
+      el("table", { class: "spec" }, el("tbody", {},
+        row("Định dạng", el("code", {}, ".csv"), " UTF-8 có dòng tiêu đề, hoặc ", el("code", {}, ".zip"), " chứa đúng một ",
+          el("code", {}, "output.csv"), " / ", el("code", {}, "submission.csv"),
+          el("div", { class: "hint" }, `Dung lượng tối đa ${MAX_UPLOAD_MB[mode]} MB.`)),
+        row("Cột", el("code", {}, `${idCol},${labelCol}`), " — đúng hai cột, đúng tên",
+          note.id ? el("div", { class: "hint" }, el("code", {}, idCol), ` là ${note.id}`) : null),
+        row("Số dòng", ...rowsCell),
+        row("Nhãn hợp lệ", ...labelsCell),
+        row("Thứ tự dòng", "Tùy ý; hệ thống căn theo ", el("code", {}, idCol), "."),
+        req.example ? row("Ví dụ", el("pre", { class: "example" },
+          [req.columns.join(","), ...req.example.map((r) => r.join(",")), "…"].join("\n"))) : null)),
+      el("div", { class: "foot" }, "Bị từ chối khi thiếu hoặc sai tên cột, sai số dòng, thiếu, trùng hoặc lạ ID, dự đoán rỗng, nhãn ngoài danh sách. ",
+        "Lần nộp bị từ chối vẫn được lưu vào lịch sử nhưng không tính điểm."));
+
+    const C = req.labels ? req.labels.length : "C";
+    $("metric-card").replaceChildren(
+      panelHead(`Chỉ số đánh giá: ${task.metric}`, `C = ${C} lớp`),
+      el("div", { class: "panel-body" },
+        el("div", { class: "eqs" },
+          el("div", { class: "eq" }, v("Precision", "c"), op("="), frac(["TP", sub("c")], ["TP", sub("c"), " + FP", sub("c")])),
+          el("div", { class: "eq" }, v("Recall", "c"), op("="), frac(["TP", sub("c")], ["TP", sub("c"), " + FN", sub("c")])),
+          el("div", { class: "eq" }, v("F1", "c"), op("="),
+            frac(["2 · Precision", sub("c"), " · Recall", sub("c")], ["Precision", sub("c"), " + Recall", sub("c")])),
+          el("div", { class: "eq" }, v("Macro-F1"), op("="), frac(["1"], ["C"]),
+            el("span", { class: "bigop" }, el("small", {}, "C"), el("span", { class: "sym" }, "∑"), el("small", {}, "c = 1")),
+            v("F1", "c"))),
+        el("ul", { class: "notes" },
+          el("li", {}, "Mọi lớp có trọng số bằng nhau: lớp ít mẫu quan trọng ngang lớp đông nhất",
+            note.major ? ` (${note.major})` : "", "; dự đoán toàn lớp đông nhất cho điểm thấp."),
+          el("li", {}, "Thang điểm từ 0 đến 1, càng cao càng tốt; hiển thị 6 chữ số thập phân."),
+          el("li", {}, `Xếp hạng theo điểm ${data.split_names[task.ranking_split]} tốt nhất của mỗi đội; bằng điểm thì so điểm Public tốt nhất, sau đó đến đội đạt điểm sớm hơn.`))));
+  }
+
+  // ---------- submit ----------
+  function setupSubmit() {
+    if (data.submit_mode !== "api") {
+      const repo = data.repository || (() => {
+        const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+        const seg = location.pathname.split("/").filter(Boolean)[0];
+        return m && seg ? `${m[1]}/${seg}` : null;
+      })();
+      $("issue-link").href = repo ? `https://github.com/${repo}/issues/new?template=submission.yml` : "#";
+      $("submit-issue").hidden = false;
+      // Without the upload form, a task picker in the GitHub panel drives the info panels.
+      const picker = el("select", { "aria-label": "Tác vụ" }, ...data.tasks.map((t) => el("option", { value: t.key }, t.name)));
+      picker.addEventListener("input", () => renderInfo(picker.value, null));
+      $("submit-issue").querySelector(".panel-body").append(
+        el("label", { class: "field", style: "margin-top:18px" }, "Xem yêu cầu cho tác vụ", picker));
+      renderInfo(data.tasks[0].key, null);
+      return;
+    }
+    $("submit-api").hidden = false;
+    const savedTeam = store.get("oai-team") || "";
+    const teamInput = data.teams && data.teams.length
+      ? el("select", { name: "team", id: "team", required: "" },
+          el("option", { value: "" }, "Chọn đội"), ...data.teams.map((t) => el("option", { value: t }, t)))
+      : el("input", { type: "text", name: "team", id: "team", maxlength: "40", autocomplete: "off", required: "" });
+    $("team-field").append(teamInput);
+    teamInput.value = (data.teams || []).length && !data.teams.includes(savedTeam) ? "" : savedTeam;
+
+    const taskSel = $("task"), splitSel = $("split");
+    taskSel.replaceChildren(...data.tasks.map((t) => el("option", { value: t.key }, t.name)));
+    const savedTask = store.get("oai-task");
+    if (data.tasks.some((t) => t.key === savedTask)) taskSel.value = savedTask;
+    const fillSplits = () => {
+      const task = data.tasks.find((t) => t.key === taskSel.value);
+      splitSel.replaceChildren(...task.splits.map((s) => el("option", { value: s }, data.split_names[s])));
+      renderInfo(task.key, splitSel.value);
+    };
+    taskSel.addEventListener("change", fillSplits);
+    splitSel.addEventListener("change", () => renderInfo(taskSel.value, splitSel.value));
+    fillSplits();
+
+    // The transparent file input covers the drop zone, so click and drag-and-drop both land on it natively.
+    const drop = $("drop"), fileInput = $("file");
+    const showFile = () => {
+      const f = fileInput.files[0];
+      drop.classList.toggle("has-file", !!f);
+      $("drop-text").replaceChildren(...(f
+        ? [el("b", {}, f.name), ` · ${(f.size / 1024).toFixed(1)} KB · bấm để đổi file`]
+        : [el("b", {}, "Chọn file"), " hoặc kéo thả file .csv / .zip vào đây"]));
+    };
+    showFile();
+    fileInput.addEventListener("change", showFile);
+    fileInput.addEventListener("dragenter", () => drop.classList.add("over"));
+    ["dragleave", "drop"].forEach((ev) => fileInput.addEventListener(ev, () => drop.classList.remove("over")));
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const team = $("team").value.trim();
+      if (!team) return showResult(errorBox("Vui lòng chọn đội."));
+      if (!fileInput.files[0]) return showResult(errorBox("Vui lòng chọn file .csv hoặc .zip."));
+      store.set("oai-team", team); store.set("oai-task", taskSel.value);
+      const btn = $("submit-btn");
+      btn.disabled = true; btn.textContent = "Đang chấm…";
+      try {
+        const res = await fetch("api/submit", { method: "POST", headers: authHeaders(), body: new FormData($("form")) });
+        if (res.status === 401) { store.del("oai-pw"); return showLogin("Mật khẩu đã thay đổi, vui lòng đăng nhập lại."); }
+        const body = await res.json().catch(() => ({ ok: false, message: `Lỗi máy chủ (HTTP ${res.status}).` }));
+        showResult(body.ok ? resultBox(body) : errorBox(body.message));
+        if (body.ok) await loadData();
+      } catch (err) {
+        showResult(errorBox("Không kết nối được máy chủ chấm điểm."));
+      } finally {
+        btn.disabled = false; btn.textContent = "Chấm điểm";
+      }
+    });
+  }
+
+  function showResult(node) { $("result").replaceChildren(node); }
+  function errorBox(message) {
+    return el("div", { class: "result bad" },
+      el("div", { class: "result-top" }, el("span", { class: "tag" }, "Không chấm được")),
+      el("div", { style: "margin-top:8px" }, message));
+  }
+  function resultBox(body) {
+    const s = body.submission;
+    const task = data.tasks.find((t) => t.key === s.task);
+    const context = `${s.team} · ${task.name} · ${data.split_names[s.split]}`;
+    const warnings = s.warnings.length ? el("ul", { class: "hint" }, ...s.warnings.map((m) => el("li", {}, m))) : null;
+    if (!s.valid) {
+      return el("div", { class: "result bad" },
+        el("div", { class: "result-top" }, el("span", { class: "tag" }, "Không hợp lệ"), context),
+        el("ul", {}, ...s.errors.map((m) => el("li", {}, m))),
+        warnings);
+    }
+    const st = body.standing;
+    const rankText = st.rank ? `Hạng ${st.rank} / ${st.ranked_teams}` : `Chưa xếp hạng · cần điểm ${data.split_names[st.ranking_split]}`;
+    return el("div", { class: "result" },
+      el("div", { class: "result-top" }, el("span", { class: "tag" }, "Hợp lệ"), context),
+      el("div", { class: "score-line" }, el("span", { class: "score" }, fmt(s.score)), el("span", { class: "rank-text" }, rankText)),
+      el("dl", { class: "kv" },
+        el("div", {}, el("dt", {}, "Metric"), el("dd", {}, s.metric_name)),
+        ...task.splits.map((sp) => el("div", {}, el("dt", {}, `Tốt nhất · ${data.split_names[sp]}`), el("dd", {}, fmt(st.best[sp]))))),
+      warnings);
+  }
+
+  // ---------- leaderboards: one separate panel per task ----------
+  const boardState = {};  // task key -> { team filter, history rows shown }
+
+  function renderBoards() {
+    const me = (store.get("oai-team") || "").trim();
+    $("boards").replaceChildren(...data.tasks.map((task, index) => {
+      const state = boardState[task.key] || (boardState[task.key] = { team: "", limit: 20 });
+      const splits = task.splits;
+      const rc = (s) => (s === task.ranking_split ? " rankcol" : "");
+
+      const head = el("tr", {}, el("th", {}, "Hạng"), el("th", {}, "Đội"),
+        ...splits.map((s) => el("th", { class: "num" + rc(s) }, data.split_names[s])),
+        el("th", { class: "num" }, "Hợp lệ / Tổng"), el("th", {}, "Lần nộp cuối"));
+      const rows = task.leaderboard.map((r) => el("tr", { class: r.team === me ? "me" : "" },
+        el("td", { class: "rank" + (r.rank && r.rank <= 3 ? " top" : "") }, r.rank || "—"),
+        el("td", { class: "team" }, r.team),
+        ...splits.map((s) => el("td", { class: "num" + rc(s) }, fmt(r.best[s]))),
+        el("td", { class: "num" }, `${r.valid_submissions} / ${r.submissions}`),
+        el("td", {}, fmtTime(r.last_submitted_at))));
+      const board = el("table", { class: "data" }, el("thead", {}, head), el("tbody", {}, ...(rows.length ? rows
+        : [el("tr", {}, el("td", { class: "empty", colspan: String(splits.length + 4) }, "Chưa có bài nộp."))])));
+
+      const all = data.history.filter((h) => h.task === task.key);
+      const teams = [...new Set([...(data.teams || []), ...all.map((h) => h.team)])];
+      const filter = el("select", { "aria-label": `Lọc đội — ${task.name}` },
+        el("option", { value: "" }, "Tất cả đội"), ...teams.map((t) => el("option", { value: t }, t)));
+      filter.value = teams.includes(state.team) ? state.team : "";
+      filter.addEventListener("input", () => { state.team = filter.value; state.limit = 20; renderBoards(); });
+      const items = all.filter((h) => !state.team || h.team === state.team);
+      const historyRows = items.slice(0, state.limit).map((h) => el("tr", {},
+        el("td", {}, fmtTime(h.submitted_at)),
+        el("td", { class: "team" }, h.issue_url ? el("a", { href: h.issue_url, target: "_blank", rel: "noopener" }, h.team) : h.team),
+        el("td", {}, data.split_names[h.split] || h.split),
+        h.valid ? el("td", { class: "num ok-text" }, fmt(h.score))
+          : el("td", { class: "err" }, "Không hợp lệ: " + (h.errors || []).join(" "))));
+      const history = el("table", { class: "data" },
+        el("thead", {}, el("tr", {}, el("th", {}, "Thời gian"), el("th", {}, "Đội"), el("th", {}, "Tập"), el("th", { class: "num" }, "Điểm"))),
+        el("tbody", {}, ...(historyRows.length ? historyRows
+          : [el("tr", {}, el("td", { class: "empty", colspan: "4" }, "Chưa có lần nộp."))])));
+      let more = null;
+      if (items.length > state.limit) {
+        const btn = el("button", { type: "button" }, `Xem thêm ${items.length - state.limit} lần nộp`);
+        btn.addEventListener("click", () => { state.limit += 50; renderBoards(); });
+        more = el("div", { class: "more" }, btn);
+      }
+
+      return el("section", { class: "panel", id: `board-${task.key}` },
+        panelHead(task.name, `${task.metric} · xếp hạng theo ${data.split_names[task.ranking_split]}`, `Tác vụ ${index + 1}`),
+        el("div", { class: "table-scroll" }, board),
+        el("div", { class: "section-head" }, el("h3", {}, `Lịch sử nộp bài · ${num(all.length)}`), filter),
+        el("div", { class: "table-scroll" }, history),
+        more);
     }));
   }
 
-  function renderBoard() {
-    const task = data.tasks.find((t) => t.key === activeTask);
-    const splits = task.splits;
-    document.getElementById("metric-note").textContent =
-      `Metric: ${task.metric} (càng cao càng tốt) · Xếp hạng theo ${data.split_names[task.ranking_split]}`;
-    const head = el("tr", {}, el("th", {}, "Hạng"), el("th", {}, "Đội"),
-      ...splits.map((s) => el("th", { class: "num" + (s === task.ranking_split ? " rankcol" : "") }, data.split_names[s])),
-      el("th", { class: "num" }, "Số lần nộp"), el("th", {}, "Lần nộp cuối"));
-    const rows = task.leaderboard.map((r) => {
-      const rank = r.rank ? el("span", { class: "rank" + (r.rank <= 3 ? ` r${r.rank}` : "") }, r.rank) : el("span", { class: "muted" }, "—");
-      return el("tr", {}, el("td", {}, rank), el("td", { class: "team" }, r.team),
-        ...splits.map((s) => el("td", { class: "num" + (s === task.ranking_split ? " rankcol" : "") }, fmt(r.best[s]))),
-        el("td", { class: "num" }, `${r.valid_submissions}/${r.submissions}`),
-        el("td", { class: "muted" }, fmtTime(r.last_submitted_at)));
-    });
-    const body = rows.length ? rows
-      : [el("tr", {}, el("td", { class: "empty", colspan: String(splits.length + 4) }, "Chưa có bài nộp hợp lệ."))];
-    document.getElementById("board").replaceChildren(el("thead", {}, head), el("tbody", {}, ...body));
-  }
-
-  function renderHistory() {
-    const task = document.getElementById("f-task").value;
-    const status = document.getElementById("f-status").value;
-    const q = document.getElementById("f-team").value.trim().toLowerCase();
-    const names = Object.fromEntries(data.tasks.map((t) => [t.key, t.name]));
-    const items = data.history.filter((h) =>
-      (!task || h.task === task) && (!status || (status === "ok") === h.valid) && (!q || h.team.toLowerCase().includes(q)));
-    const head = el("tr", {}, el("th", {}, "Thời gian"), el("th", {}, "Đội"), el("th", {}, "Tác vụ"),
-      el("th", {}, "Tập"), el("th", { class: "num" }, "Điểm"), el("th", {}, ""));
-    const rows = items.slice(0, historyLimit).map((h) => {
-      const score = h.valid ? el("td", { class: "num ok" }, fmt(h.score))
-        : el("td", { class: "err" }, "Không hợp lệ: " + (h.errors || []).join(" "));
-      const link = h.issue_url ? el("a", { href: h.issue_url, target: "_blank", rel: "noopener" }, "issue") : el("span", { class: "muted" }, h.source || "");
-      return el("tr", {}, el("td", { class: "muted" }, fmtTime(h.submitted_at)), el("td", { class: "team" }, h.team),
-        el("td", {}, names[h.task] || h.task), el("td", {}, data.split_names[h.split] || h.split), score, el("td", {}, link));
-    });
-    const body = rows.length ? rows : [el("tr", {}, el("td", { class: "empty", colspan: "6" }, "Chưa có lần nộp nào."))];
-    document.getElementById("history").replaceChildren(el("thead", {}, head), el("tbody", {}, ...body));
-    document.getElementById("more").hidden = items.length <= historyLimit;
-  }
-
-  fetch("leaderboard.json", { cache: "no-store" })
-    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((json) => {
-      data = json;
-      const repo = data.repository || repoFromLocation();
-      const link = document.getElementById("submit-link");
-      if (repo) link.href = `https://github.com/${repo}/issues/new?template=submission.yml`; else link.hidden = true;
-      document.getElementById("updated").textContent =
-        `Cập nhật lúc ${fmtTime(data.generated_at)} · ${data.history.length} lần nộp`;
-      const fromHash = location.hash.slice(1);
-      activeTask = data.tasks.some((t) => t.key === fromHash) ? fromHash : data.tasks[0].key;
-      const sel = document.getElementById("f-task");
-      for (const t of data.tasks) sel.append(el("option", { value: t.key }, t.name));
-      for (const id of ["f-task", "f-status", "f-team"])
-        document.getElementById(id).addEventListener("input", () => { historyLimit = 50; renderHistory(); });
-      document.querySelector("#more button").addEventListener("click", () => { historyLimit += 50; renderHistory(); });
-      renderTabs(); renderBoard(); renderHistory();
-    })
-    .catch((e) => { document.getElementById("updated").textContent = "Không tải được dữ liệu bảng xếp hạng (" + e.message + ")."; });
+  // ---------- start ----------
+  currentView = location.hash.slice(1) === "rank" ? "rank" : "submit";
+  start();
+  // Keep the leaderboard fresh while the page is open.
+  setInterval(() => {
+    if (document.hidden || !data) return;
+    loadData().catch((e) => { if (e instanceof AuthError) showLogin("Mật khẩu đã thay đổi, vui lòng đăng nhập lại."); });
+  }, 30000);
 })();
 </script>
 </body>

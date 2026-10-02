@@ -1,0 +1,6 @@
+{
+  "_huong_dan": "Danh sách đội được phép nộp bài. Web local hiển thị các tên đội này trong ô chọn. Danh sách bên phải mỗi đội là GitHub username của thành viên, dùng khi nộp qua GitHub Issue (để trống [] thì nộp qua Issue sẽ dùng GitHub username làm tên đội).",
+  "Kiên": [],
+  "Tùng": [],
+  "Thanh": []
+}

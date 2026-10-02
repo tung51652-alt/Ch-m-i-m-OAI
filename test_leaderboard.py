@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import unicodedata
 import unittest
 from unittest import mock
 
@@ -16,14 +17,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 import scoring  # noqa: E402
 from leaderboard import (  # noqa: E402
+    ACTIVE_TASKS,
     build_leaderboard,
     build_record,
     count_today,
     export_site_data,
     load_records,
+    normalize_team,
     save_record,
+    task_requirements,
+    team_names,
 )
 import grade_issue  # noqa: E402
+import sitelock  # noqa: E402
 
 
 def record(team, task, split, score, at, valid=True):
@@ -111,7 +117,11 @@ class LeaderboardRankingTests(unittest.TestCase):
             self.assertEqual(cv["leaderboard"][0]["team"], "Đội A")
 
 
-ISSUE_BODY = """### Tác vụ
+ISSUE_BODY = """### Đội
+
+{team}
+
+### Tác vụ
 
 {task}
 
@@ -156,8 +166,10 @@ class GradeIssueTests(unittest.TestCase):
             fetch=lambda url, token: csv_bytes,
         )
 
-    def body(self, task="Tác vụ 1 — Computer Vision: DeepWeeds", split="Public Test", file=ATTACHMENT):
-        return ISSUE_BODY.format(task=task, split=split, file=file)
+    def body(self, task="Tác vụ 1 — Computer Vision: DeepWeeds", split="Public Test", file=ATTACHMENT, team=""):
+        body = ISSUE_BODY.format(team=team, task=task, split=split, file=file)
+        # Without a team the "Đội" section is dropped, like an issue from the older form.
+        return body if team else body.replace("### Đội\n\n\n\n", "", 1)
 
     def test_valid_submission_is_scored_saved_and_ranked(self) -> None:
         status, comment = self.run_issue(self.body())
@@ -205,12 +217,90 @@ class GradeIssueTests(unittest.TestCase):
         self.assertEqual(self.run_issue(self.body(), login="mallory", number=10)[0], "rejected")
         self.assertEqual(load_records(self.results)[0]["team"], "Đội Rồng")
 
+    def test_team_chosen_in_form_is_validated_against_teams_json(self) -> None:
+        self.teams.write_text(json.dumps({"Kiên": [], "Thanh": ["thanh-gh"]}), encoding="utf-8")
+        self.assertEqual(self.run_issue(self.body(team="Kiên"), login="anyone")[0], "graded")
+        self.assertEqual(load_records(self.results)[0]["team"], "Kiên")
+        status, comment = self.run_issue(self.body(team="Đội lạ"), number=11)
+        self.assertEqual(status, "invalid")
+        self.assertIn("không có trong danh sách", comment)
+        self.assertEqual(self.run_issue(self.body(team="Thanh"), login="someone-else", number=12)[0], "rejected")
+        self.assertEqual(self.run_issue(self.body(team="Thanh"), login="Thanh-GH", number=13)[0], "graded")
+
+    def test_gist_raw_link_is_accepted(self) -> None:
+        gist = "https://gist.githubusercontent.com/u/abc123/raw/def456/output.csv"
+        self.assertEqual(grade_issue.find_attachment(f"link: {gist}", "o/r"), (gist, "output.csv"))
+        with self.assertRaises(grade_issue.SubmissionProblem):
+            grade_issue.find_attachment("https://gist.github.com/u/abc123", "o/r")
+        self.assertEqual(self.run_issue(self.body(file=gist))[0], "graded")
+
+    def test_issue_form_team_options_match_teams_json(self) -> None:
+        template = (Path(__file__).resolve().parent / ".github/ISSUE_TEMPLATE/submission.yml").read_text(encoding="utf-8")
+        block = template.split("id: team", 1)[1].split("validations:", 1)[0]
+        options = [line.strip().strip("- ").strip('"') for line in block.splitlines() if line.strip().startswith("- ")]
+        self.assertEqual(options, team_names())
+
     def test_missing_ground_truth_is_system_error_not_recorded(self) -> None:
         missing = replace(scoring.TASKS["nlp"], organizer_dir=Path(self.tmp.name) / "missing")
         with mock.patch.dict(scoring.TASKS, {"nlp": missing}):
             status, comment = self.run_issue(self.body(task="Tác vụ 2 — NLP: Vietnamese Spam Review Detection"))
         self.assertEqual(status, "error")
         self.assertEqual(load_records(self.results), [])
+
+
+class SiteLockTests(unittest.TestCase):
+    def test_encrypt_round_trip_and_wrong_password(self) -> None:
+        payload = {"tasks": [{"team": "Đội Rồng", "score": 0.5}]}
+        envelope = sitelock.encrypt_json(payload, "mật-khẩu")
+        self.assertTrue(envelope["encrypted"])
+        self.assertNotIn("Rồng", json.dumps(envelope, ensure_ascii=False))
+        self.assertEqual(sitelock.decrypt_json(envelope, "mật-khẩu"), payload)
+        with self.assertRaises(Exception):
+            sitelock.decrypt_json(envelope, "sai")
+
+    def test_password_created_once_and_env_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(sitelock, "PASSWORD_FILE", Path(tmp) / "pw"), \
+                mock.patch.dict("os.environ", {"GRADER_PASSWORD": ""}):
+            self.assertIsNone(sitelock.load_password())
+            created = sitelock.load_password(create=True)
+            self.assertRegex(created, r"^oai-[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$")
+            self.assertEqual(sitelock.load_password(create=True), created)
+            with mock.patch.dict("os.environ", {"GRADER_PASSWORD": "from-env"}):
+                self.assertEqual(sitelock.load_password(), "from-env")
+        self.assertTrue(sitelock.check_password("abc", "abc"))
+        self.assertFalse(sitelock.check_password(None, "abc"))
+
+
+class RequirementsTests(unittest.TestCase):
+    def test_requirements_from_ground_truth_without_true_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            organizer = Path(tmp)
+            truth = pd.DataFrame({"image_id": ["a.jpg", "b.jpg", "c.jpg"], "label": ["Lantana", "Lantana", "Negative"]})
+            truth.to_csv(organizer / "public_ground_truth.csv", index=False)
+            truth.head(2).to_csv(organizer / "private_ground_truth.csv", index=False)
+            with mock.patch.dict(scoring.TASKS, {"cv": replace(scoring.TASKS["cv"], organizer_dir=organizer)}):
+                req = task_requirements("cv")
+        self.assertEqual(req["columns"], ["image_id", "label"])
+        self.assertEqual(req["rows"], {"public": 3, "private": 2})
+        self.assertEqual(req["labels"], ["Lantana", "Negative"])
+        self.assertEqual([r[1] for r in req["example"]], ["Lantana", "Negative", "Lantana"])  # cycled, not truth
+
+    def test_missing_data_gives_partial_requirements(self) -> None:
+        missing = replace(scoring.TASKS["nlp"], organizer_dir=Path("/nonexistent"))
+        with mock.patch.dict(scoring.TASKS, {"nlp": missing}):
+            req = task_requirements("nlp")
+        self.assertEqual(req["columns"], ["id", "label"])
+        self.assertIsNone(req["rows"])
+        self.assertIsNone(req["labels"])
+
+    def test_team_list_from_teams_json(self) -> None:
+        self.assertEqual(team_names(), ["Kiên", "Tùng", "Thanh"])
+        decomposed = unicodedata.normalize("NFD", " Kiên  ")
+        self.assertEqual(normalize_team(decomposed), "Kiên")
+        self.assertEqual(team_names(Path("/nonexistent.json")), [])
+
+    def test_only_oai_t7_tasks_are_active(self) -> None:
+        self.assertEqual(ACTIVE_TASKS, ["cv", "nlp"])
 
 
 if __name__ == "__main__":

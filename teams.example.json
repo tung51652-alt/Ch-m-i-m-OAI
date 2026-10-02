@@ -1,5 +1,0 @@
-{
-  "_huong_dan": "Đổi tên file thành teams.json để chỉ cho phép các tài khoản GitHub dưới đây nộp bài. Mỗi đội liệt kê GitHub username của các thành viên; các thành viên cùng đội chung một hàng trên bảng xếp hạng và chung giới hạn lượt nộp/ngày. Không có teams.json thì ai cũng nộp được và tên đội = GitHub username.",
-  "Đội Rồng": ["github-user-1", "github-user-2"],
-  "Đội Phượng": ["github-user-3"]
-}

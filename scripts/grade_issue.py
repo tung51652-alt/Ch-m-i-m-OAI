@@ -25,6 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from leaderboard import (  # noqa: E402
+    ACTIVE_TASKS,
+    normalize_team,
+    team_names,
     SPLIT_DISPLAY,
     build_leaderboard,
     build_record,
@@ -49,7 +52,7 @@ SPLIT_OPTIONS = {
     "Private Test": "private",
     "Test Set (ViLexNorm)": "test",
 }
-ATTACHMENT_RE = re.compile(r"https://github\.com/[^\s)\]>\"']+")
+ATTACHMENT_RE = re.compile(r"https://(?:github\.com|gist\.githubusercontent\.com)/[^\s)\]>\"']+")
 
 
 class SubmissionProblem(Exception):
@@ -81,7 +84,7 @@ def parse_issue_form(body: str) -> dict[str, str]:
 
 def resolve_task_split(fields: dict[str, str]) -> tuple[str, str]:
     task = TASK_OPTIONS.get(fields.get("Tác vụ", "").strip())
-    if task is None:
+    if task not in ACTIVE_TASKS:
         raise SubmissionProblem("Không nhận diện được **Tác vụ**. Hãy dùng form *Nộp bài chấm điểm*.")
     split = SPLIT_OPTIONS.get(fields.get("Tập đánh giá", "").strip())
     if split is None:
@@ -94,20 +97,28 @@ def resolve_task_split(fields: dict[str, str]) -> tuple[str, str]:
 
 
 def find_attachment(text: str, repository: str) -> tuple[str, str]:
-    """Return (url, file name) of the single .csv/.zip attached via GitHub's uploader."""
+    """Return (url, file name) of the single .csv/.zip in the issue.
+
+    Accepted: files attached with GitHub's uploader, or a raw Gist link
+    (https://gist.githubusercontent.com/<user>/<id>/raw/.../file.csv) for teams submitting from the CLI.
+    """
     candidates = []
     for url in ATTACHMENT_RE.findall(text or ""):
-        path = urllib.parse.urlparse(url).path
-        is_upload = path.startswith("/user-attachments/files/") or path.lower().startswith(
-            f"/{repository.lower()}/files/"
-        )
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path
+        if parsed.netloc == "gist.githubusercontent.com":
+            is_upload = "/raw/" in path
+        else:
+            is_upload = path.startswith("/user-attachments/files/") or path.lower().startswith(
+                f"/{repository.lower()}/files/"
+            )
         name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
         if is_upload and name.lower().endswith((".csv", ".zip")) and url not in [c[0] for c in candidates]:
             candidates.append((url, name))
     if not candidates:
         raise SubmissionProblem(
             "Không tìm thấy file .csv/.zip đính kèm. Hãy **kéo thả file** vào ô *File submission* "
-            "và chờ GitHub upload xong trước khi bấm Submit."
+            "và chờ GitHub upload xong trước khi bấm Submit, hoặc dán link raw của Gist."
         )
     if len(candidates) > 1:
         raise SubmissionProblem("Issue có nhiều hơn một file đính kèm; mỗi issue chỉ được nộp một file.")
@@ -140,7 +151,7 @@ def load_teams(path: Path) -> dict[str, str]:
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {
-        str(login).lower(): str(team)
+        str(login).lower(): normalize_team(team)
         for team, logins in raw.items()
         if not str(team).startswith("_")
         for login in logins
@@ -168,7 +179,7 @@ def comment_for_result(record: dict[str, Any], snippet: str, site_url: str | Non
     lines = []
     if record["valid"]:
         lines += [
-            "## ✅ Submission hợp lệ",
+            "## Submission hợp lệ",
             "",
             "| | |",
             "|---|---|",
@@ -182,7 +193,7 @@ def comment_for_result(record: dict[str, Any], snippet: str, site_url: str | Non
         lines.append(f"| Số mẫu hợp lệ | {record['stats']['valid_samples']:,} |")
     else:
         lines += [
-            "## ❌ Submission không hợp lệ",
+            "## Submission không hợp lệ",
             "",
             f"Đội **{record['team']}** · {config.display_name} · {SPLIT_DISPLAY[record['split']]}",
             "",
@@ -198,7 +209,7 @@ def comment_for_result(record: dict[str, Any], snippet: str, site_url: str | Non
     if limit_info:
         lines += ["", limit_info]
     if site_url:
-        lines += ["", f"📊 Bảng xếp hạng: {site_url} (cập nhật sau ~1 phút)"]
+        lines += ["", f"Bảng xếp hạng: {site_url} (cập nhật sau ~1 phút)"]
     lines += ["", f"<sub>Submission ID `{record['id']}` · SHA-256 `{record['file_sha256'][:12]}`</sub>"]
     return "\n".join(lines)
 
@@ -218,25 +229,38 @@ def grade_issue(event: dict[str, Any], *, repository: str, token: str | None, si
     login = issue["user"]["login"]
     submitted_at = utc_now()
 
-    teams = load_teams(teams_path)
-    if teams and login.lower() not in teams:
-        return "rejected", (
-            f"## ⛔ Chưa đăng ký đội\n\nTài khoản `@{login}` chưa có trong danh sách đội (`teams.json`). "
-            "Hãy liên hệ ban tổ chức để được thêm vào."
-        )
-    team = teams.get(login.lower(), login)
+    fields = parse_issue_form(issue.get("body") or "")
+    members = load_teams(teams_path)  # GitHub login -> team
+    choice = normalize_team(fields.get("Đội", ""))
+    if choice:
+        allowed = team_names(teams_path)
+        if allowed and choice not in allowed:
+            return "invalid", f"## Không đọc được form nộp bài\n\nĐội **{choice}** không có trong danh sách: {', '.join(allowed)}."
+        # A team listing GitHub usernames only accepts submissions from those accounts.
+        team_logins = {name for name, team in members.items() if team == choice}
+        if team_logins and login.lower() not in team_logins:
+            return "rejected", (
+                f"## Không thuộc đội\n\nTài khoản `@{login}` không có trong danh sách thành viên của đội **{choice}** (`teams.json`)."
+            )
+        team = choice
+    else:
+        if members and login.lower() not in members:
+            return "rejected", (
+                f"## Chưa đăng ký đội\n\nTài khoản `@{login}` chưa có trong danh sách đội (`teams.json`). "
+                "Hãy liên hệ ban tổ chức để được thêm vào."
+            )
+        team = members.get(login.lower(), login)
 
     try:
-        fields = parse_issue_form(issue.get("body") or "")
         task, split = resolve_task_split(fields)
     except SubmissionProblem as exc:
-        return "invalid", f"## ❌ Không đọc được form nộp bài\n\n{exc}"
+        return "invalid", f"## Không đọc được form nộp bài\n\n{exc}"
 
     records = load_records(results_dir)
     used = count_today(records, team, task, split, submitted_at)
     if daily_limit > 0 and used >= daily_limit:
         return "rejected", (
-            f"## ⛔ Hết lượt nộp hôm nay\n\nĐội **{team}** đã nộp {used}/{daily_limit} bài hợp lệ cho "
+            f"## Hết lượt nộp hôm nay\n\nĐội **{team}** đã nộp {used}/{daily_limit} bài hợp lệ cho "
             f"{get_task_config(task).display_name} — {SPLIT_DISPLAY[split]} hôm nay. "
             "Lượt nộp được làm mới lúc 00:00 (giờ Việt Nam)."
         )
@@ -253,7 +277,7 @@ def grade_issue(event: dict[str, Any], *, repository: str, token: str | None, si
     except FileNotFoundError as exc:
         # The organizer's data is missing: not the participant's fault, so nothing is recorded.
         return "error", (
-            "## ⚠️ Hệ thống chưa sẵn sàng\n\nMáy chấm chưa có đáp án cho tác vụ này "
+            "## Hệ thống chưa sẵn sàng\n\nMáy chấm chưa có đáp án cho tác vụ này "
             f"({exc}). Ban tổ chức sẽ kiểm tra; bạn có thể nộp lại sau."
         )
 

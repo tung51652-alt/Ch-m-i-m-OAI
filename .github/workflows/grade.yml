@@ -103,5 +103,5 @@ jobs:
       - name: Report crash
         if: failure()
         run: |
-          gh issue comment "${ISSUE}" --body "⚠️ Lỗi hệ thống khi chấm (xem [log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})). Ban tổ chức sẽ kiểm tra và chấm lại." || true
+          gh issue comment "${ISSUE}" --body "Lỗi hệ thống khi chấm (xem [log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})). Ban tổ chức sẽ kiểm tra và chấm lại." || true
           gh issue edit "${ISSUE}" --add-label needs-organizer || true

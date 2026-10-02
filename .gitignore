@@ -5,3 +5,4 @@ __pycache__/
 *.log
 .grader_data_key
 _site/
+.grader_password

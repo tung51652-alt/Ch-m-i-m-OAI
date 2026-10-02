@@ -1,3 +1,7 @@
 streamlit
 pandas
 scikit-learn
+starlette
+uvicorn
+python-multipart
+cryptography

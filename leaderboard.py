@@ -13,17 +13,40 @@ from pathlib import Path
 import re
 import secrets
 from typing import Any, Iterable
+import unicodedata
 
-from scoring import TASKS, get_task_config
+from scoring import TASKS, get_task_config, load_ground_truth
 
 
 APP_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = Path(os.environ.get("GRADER_RESULTS_DIR") or APP_DIR / "results").resolve()
 SUBMISSIONS_DIR_NAME = "submissions"
+TEAMS_FILE = APP_DIR / "teams.json"
 # Daily submission limits reset at midnight Vietnam time.
 LOCAL_TZ = timezone(timedelta(hours=7))
 
+# Tasks open for submission and shown on the leaderboard (OAI T7: DeepWeeds + Spam Review).
+ACTIVE_TASKS = [
+    task.strip()
+    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp").split(",")
+    if task.strip() in TASKS
+]
+
 SPLIT_DISPLAY = {"public": "Public Test", "private": "Private Test", "test": "Test Set"}
+
+
+def normalize_team(name: str) -> str:
+    """Collapse whitespace and use NFC so "Kiên" typed on any OS matches the configured name."""
+    return unicodedata.normalize("NFC", " ".join(str(name).split()))
+
+
+def team_names(path: Path | None = None) -> list[str]:
+    """Team names allowed to submit, from the keys of teams.json; empty list means any name."""
+    path = path or TEAMS_FILE
+    if not path.is_file():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return [normalize_team(name) for name in raw if not str(name).startswith("_")]
 
 
 def task_splits(task: str) -> list[str]:
@@ -208,10 +231,52 @@ def build_leaderboard(records: Iterable[dict[str, Any]], task: str) -> list[dict
     return rows
 
 
-def export_site_data(records: list[dict[str, Any]], repository: str | None = None) -> dict[str, Any]:
-    """Data consumed by the static github.io leaderboard page."""
+def task_requirements(task: str) -> dict[str, Any]:
+    """What a valid submission file must contain, derived from the organizer files.
+
+    Only the label domain, row counts and a few IDs are exposed, never true labels.
+    Fields stay None when the ground truth is not available (e.g. a CI build without data).
+    """
+    config = get_task_config(task)
+    rows: dict[str, int] = {}
+    labels: set[str] = set()
+    example_ids: list[str] = []
+    for split in task_splits(task):
+        try:
+            truth = load_ground_truth(task, split)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        rows[split] = len(truth)
+        labels |= set(truth[config.label_col].astype(str))
+        if not example_ids:
+            example_ids = truth[config.id_col].astype(str).head(3).tolist()
+    sorted_labels = sorted(labels)
+    example = None
+    if example_ids and sorted_labels:
+        # Labels are cycled from the label domain, not taken from the ground truth.
+        example = [[i, sorted_labels[n % len(sorted_labels)]] for n, i in enumerate(example_ids)]
+    return {
+        "columns": [config.id_col, config.label_col],
+        "rows": rows or None,
+        "labels": sorted_labels or None,
+        "example": example,
+    }
+
+
+def export_site_data(
+    records: list[dict[str, Any]],
+    repository: str | None = None,
+    submit_mode: str = "issue",
+) -> dict[str, Any]:
+    """Data consumed by the web page.
+
+    ``submit_mode`` is "api" when served by server.py (upload form posts to
+    /api/submit) and "issue" on GitHub Pages (submit through a GitHub Issue).
+    """
+    records = [r for r in records if r.get("task") in ACTIVE_TASKS]
     tasks = []
-    for key, config in TASKS.items():
+    for key in ACTIVE_TASKS:
+        config = TASKS[key]
         tasks.append(
             {
                 "key": key,
@@ -220,6 +285,7 @@ def export_site_data(records: list[dict[str, Any]], repository: str | None = Non
                 "splits": task_splits(key),
                 "ranking_split": ranking_split(key),
                 "leaderboard": build_leaderboard(records, key),
+                "requirements": task_requirements(key),
             }
         )
     history = [
@@ -235,6 +301,7 @@ def export_site_data(records: list[dict[str, Any]], repository: str | None = Non
     return {
         "generated_at": utc_now().isoformat().replace("+00:00", "Z"),
         "repository": repository,
+        "submit_mode": submit_mode,
         "split_names": SPLIT_DISPLAY,
         "tasks": tasks,
         "history": history,

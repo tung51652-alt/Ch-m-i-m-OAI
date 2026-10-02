@@ -39,7 +39,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Decrypt ground truth (for submission requirements)
+        env:
+          GRADER_DATA_KEY: ${{ secrets.GRADER_DATA_KEY }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/data"
+          if [[ -n "${GRADER_DATA_KEY}" && -f secure/ground_truth.tar.gz.enc ]]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:GRADER_DATA_KEY \
+              -in secure/ground_truth.tar.gz.enc | tar xzf - -C "${RUNNER_TEMP}/data"
+          fi
+          echo "GRADER_DATA_ROOT=${RUNNER_TEMP}/data" >> "${GITHUB_ENV}"
+
       - name: Build site
+        env:
+          GRADER_PASSWORD: ${{ secrets.GRADER_PASSWORD }}
         run: python scripts/build_site.py --out _site
 
       - uses: actions/configure-pages@v5
