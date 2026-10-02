@@ -119,17 +119,27 @@
     if (!response.body) throw new Error("Trình duyệt không nhận được luồng dữ liệu.");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let content = "";
+    let answer = "";
+    let reasoning = "";
     let providerError = "";
+    const combinedContent = (finished = false) => {
+      if (!reasoning) return answer;
+      if (answer) return `<think>${reasoning}</think>${answer}`;
+      return finished
+        ? `<think>${reasoning}</think>Mô hình chưa tạo phần kết luận trong giới hạn lượt này.`
+        : `<think>${reasoning}`;
+    };
     const parser = new SSEParser((data) => {
       if (data === "[DONE]") return;
       try {
         const chunk = JSON.parse(data);
         if (chunk.error) providerError = typeof chunk.error === "string" ? chunk.error : chunk.error.message;
-        const delta = chunk?.choices?.[0]?.delta?.content;
-        if (typeof delta === "string") {
-          content += delta;
-          renderMessage(article, content);
+        const delta = chunk?.choices?.[0]?.delta || {};
+        const reasoningDelta = delta.reasoning_content || delta.reasoning;
+        if (typeof reasoningDelta === "string") reasoning += reasoningDelta;
+        if (typeof delta.content === "string") answer += delta.content;
+        if (reasoningDelta || delta.content) {
+          renderMessage(article, combinedContent());
         }
       } catch (error) {
         // Ignore a malformed event and keep consuming subsequent provider events.
@@ -144,7 +154,9 @@
     parser.push(decoder.decode());
     parser.finish();
     if (providerError) throw new Error(providerError);
+    const content = combinedContent(true);
     if (!content.trim()) throw new Error("Mô hình không trả về nội dung.");
+    renderMessage(article, content);
     return content;
   }
 

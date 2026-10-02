@@ -5,7 +5,7 @@ import {
   DEFAULT_TURN_TOKEN_LIMIT,
   HttpError,
   corsHeaders,
-  inspectProviderStream,
+  createUsageCollector,
   isOriginAllowed,
   normalizeMessages,
   positiveInteger,
@@ -196,27 +196,68 @@ async function releaseReservation(db, sessionId) {
   ).bind(sessionId).run();
 }
 
-async function settleReservation(db, sessionId, reservation, stream, abortController, timeoutId) {
+async function settleReservation(db, sessionId, reservation, usage) {
   let charged = reservation;
-  try {
-    const usage = await inspectProviderStream(stream);
-    if (Number.isInteger(usage.completionTokens) && usage.completionTokens >= 0) {
-      charged = usage.completionTokens;
-    } else if (!usage.sawContent) {
-      charged = 0;
-    }
-  } catch (error) {
-    charged = reservation;
-  } finally {
-    clearTimeout(timeoutId);
-    abortController.abort();
+  if (Number.isInteger(usage?.completionTokens) && usage.completionTokens >= 0) {
+    charged = usage.completionTokens;
+  } else if (!usage?.sawContent) {
+    charged = 0;
   }
   await db.prepare(
     "UPDATE chat_sessions SET used_tokens = MIN(token_limit, used_tokens + ?), reserved_tokens = 0, in_flight = 0, in_flight_at = NULL WHERE id = ?",
   ).bind(Math.max(0, charged), sessionId).run();
 }
 
-async function chat(request, env, context) {
+function auditedProviderStream(upstream, { db, sessionId, reservation, abortController, timeoutId }) {
+  const reader = upstream.getReader();
+  const decoder = new TextDecoder();
+  const collector = createUsageCollector();
+  let settlement = null;
+
+  const settleOnce = (usage) => {
+    if (!settlement) {
+      clearTimeout(timeoutId);
+      settlement = settleReservation(db, sessionId, reservation, usage);
+    }
+    return settlement;
+  };
+
+  return new ReadableStream({
+    start(controller) {
+      // Keep accounting inside the response stream lifetime. Cloudflare may stop waitUntil work
+      // 30 seconds after headers are returned, while reasoning responses often run longer.
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            collector.push(decoder.decode(value, { stream: true }));
+            controller.enqueue(value);
+          }
+          collector.push(decoder.decode());
+          await settleOnce(collector.finish());
+          controller.close();
+        } catch (error) {
+          try {
+            await settleOnce({ completionTokens: null, sawContent: true });
+          } finally {
+            controller.error(error);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      };
+      void pump();
+    },
+    async cancel(reason) {
+      abortController.abort();
+      try { await reader.cancel(reason); } catch (error) { /* upstream may already be closed */ }
+      await settleOnce({ completionTokens: null, sawContent: true });
+    },
+  });
+}
+
+async function chat(request, env) {
   if (!env.HF_TOKEN) throw new Error("Thiếu secret HF_TOKEN.");
   const db = requireDatabase(env);
   const session = await loadAuthorizedSession(request, env);
@@ -270,8 +311,13 @@ async function chat(request, env, context) {
     );
   }
 
-  const [clientStream, auditStream] = upstream.body.tee();
-  context.waitUntil(settleReservation(db, session.id, reservation, auditStream, abortController, timeoutId));
+  const clientStream = auditedProviderStream(upstream.body, {
+    db,
+    sessionId: session.id,
+    reservation,
+    abortController,
+    timeoutId,
+  });
   return new Response(clientStream, {
     status: 200,
     headers: {
@@ -321,20 +367,20 @@ async function createTickets(request, env) {
   return responseJson({ ok: true, tickets, expiresAt: expiresAt?.toISOString() || null }, 201);
 }
 
-async function route(request, env, context) {
+async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") {
     return responseJson({ ok: true, service: "oai-chat", configured: Boolean(env.HF_TOKEN && env.SESSION_SIGNING_KEY && env.CHAT_DB) });
   }
   if (request.method === "POST" && url.pathname === "/api/session") return openSession(request, env);
   if (request.method === "GET" && url.pathname === "/api/session") return getSession(request, env);
-  if (request.method === "POST" && url.pathname === "/api/chat") return chat(request, env, context);
+  if (request.method === "POST" && url.pathname === "/api/chat") return chat(request, env);
   if (request.method === "POST" && url.pathname === "/api/admin/tickets") return createTickets(request, env);
   throw new HttpError(404, "Không tìm thấy endpoint.");
 }
 
 export default {
-  async fetch(request, env, context) {
+  async fetch(request, env) {
     const origin = request.headers.get("Origin");
     const headers = corsHeaders(origin, env.ALLOWED_ORIGINS);
     if (origin && !isOriginAllowed(origin, env.ALLOWED_ORIGINS)) {
@@ -344,7 +390,7 @@ export default {
       return new Response(null, { status: 204, headers });
     }
     try {
-      return withHeaders(await route(request, env, context), headers);
+      return withHeaders(await route(request, env), headers);
     } catch (error) {
       if (error instanceof HttpError) {
         return responseJson({ ok: false, message: error.message }, error.status, headers);
