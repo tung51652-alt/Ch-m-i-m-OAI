@@ -159,7 +159,7 @@ Backend nằm trong `chat_worker/` và được thiết kế cho Cloudflare Work
 
 - Hugging Face token và khóa ký session chỉ nằm trong Worker secrets.
 - Model mặc định là `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:featherless-ai` qua Hugging Face Router.
-- Mỗi ticket dùng một lần và gắn với một session có 2.000 completion token, bao gồm token suy luận.
+- Mỗi ticket nhận một session có 2.000 completion token, bao gồm token suy luận. Khi dùng hết quota hoặc session hết hạn, cùng ticket có thể tạo session mới.
 - D1 chỉ lưu hash ticket, session, quota và thời hạn; không lưu prompt hoặc câu trả lời.
 - Mỗi phiên chỉ chạy một lượt sinh tại một thời điểm và giữ trước quota để tránh vượt giới hạn khi mở nhiều tab.
 

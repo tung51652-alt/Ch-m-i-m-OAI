@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import worker from "../src/worker.mjs";
+import { sha256Hex } from "../src/core.mjs";
 
 class FakePrepared {
   constructor(db, sql) {
@@ -19,15 +20,30 @@ class FakePrepared {
     if (this.sql.includes("FROM chat_sessions WHERE id = ?")) {
       return this.db.sessions.get(this.values[0]) || null;
     }
+    if (this.sql.includes("FROM chat_tickets WHERE ticket_hash = ?")) {
+      return [...this.db.tickets.values()].find((ticket) => (
+        ticket.ticket_hash === this.values[0] && ticket.enabled === 1
+      )) || null;
+    }
+    if (this.sql.includes("FROM chat_tickets WHERE id = ?")) {
+      const ticket = this.db.tickets.get(this.values[0]) || null;
+      if (this.sql.includes("enabled = 1") && ticket?.enabled !== 1) return null;
+      return ticket;
+    }
     throw new Error(`Unsupported first SQL: ${this.sql}`);
   }
 
   async run() {
     if (this.sql.startsWith("INSERT INTO chat_sessions")) {
-      const [id, tokenLimit, expiresAt, createdAt] = this.values;
+      const ticketSession = this.values.length === 5;
+      const [id, ticketIdOrLimit, tokenLimitOrExpiry, expiresAtOrCreated, maybeCreatedAt] = this.values;
+      const ticketId = ticketSession ? ticketIdOrLimit : null;
+      const tokenLimit = ticketSession ? tokenLimitOrExpiry : ticketIdOrLimit;
+      const expiresAt = ticketSession ? expiresAtOrCreated : tokenLimitOrExpiry;
+      const createdAt = ticketSession ? maybeCreatedAt : expiresAtOrCreated;
       this.db.sessions.set(id, {
         id,
-        ticket_id: null,
+        ticket_id: ticketId,
         token_limit: tokenLimit,
         used_tokens: 0,
         reserved_tokens: 0,
@@ -37,6 +53,21 @@ class FakePrepared {
         created_at: createdAt,
       });
       return { meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith("UPDATE chat_tickets SET claimed_session_id")) {
+      const [sessionId, claimedAt, ticketId, previousSessionId] = this.values;
+      const ticket = this.db.tickets.get(ticketId);
+      const claimMatches = previousSessionId === undefined
+        ? ticket?.claimed_session_id == null
+        : ticket?.claimed_session_id === previousSessionId;
+      if (!ticket || ticket.enabled !== 1 || !claimMatches) return { meta: { changes: 0 } };
+      ticket.claimed_session_id = sessionId;
+      ticket.claimed_at = claimedAt;
+      return { meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith("DELETE FROM chat_sessions WHERE id = ?")) {
+      const deleted = this.db.sessions.delete(this.values[0]);
+      return { meta: { changes: deleted ? 1 : 0 } };
     }
     if (this.sql.startsWith("UPDATE chat_sessions SET reserved_tokens = ?, in_flight = 1")) {
       const [reservation, reservedAt, id, required, now] = this.values;
@@ -72,10 +103,17 @@ class FakePrepared {
 class FakeD1 {
   constructor() {
     this.sessions = new Map();
+    this.tickets = new Map();
   }
 
   prepare(sql) {
     return new FakePrepared(this, sql);
+  }
+
+  async batch(statements) {
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
   }
 }
 
@@ -97,6 +135,19 @@ function environment(db) {
     TURN_TOKEN_LIMIT: "768",
     PROVIDER_TIMEOUT_MS: "10000",
   };
+}
+
+async function addTicket(db, code = "OAI-ABCDE-23456") {
+  db.tickets.set(1, {
+    id: 1,
+    ticket_hash: await sha256Hex(code),
+    label: "Đội kiểm thử",
+    claimed_session_id: null,
+    claimed_at: null,
+    expires_at: null,
+    enabled: 1,
+  });
+  return code;
 }
 
 test("practice session streams a response and settles quota from provider usage", async () => {
@@ -268,4 +319,74 @@ test("an abandoned in-flight lock is recovered after the provider timeout", asyn
   assert.equal(status.session.inFlight, false);
   assert.equal(status.session.reservedTokens, 0);
   assert.equal(status.session.remainingTokens, 2000);
+});
+
+test("an exhausted ticket session can create a fresh session", async () => {
+  const db = new FakeD1();
+  const env = { ...environment(db), PRACTICE_MODE: "false" };
+  const code = await addTicket(db);
+  const context = { waitUntil() {} };
+  const opened = await (await worker.fetch(request("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticket: code }),
+  }), env, context)).json();
+  const firstId = db.tickets.get(1).claimed_session_id;
+  db.sessions.get(firstId).used_tokens = 2000;
+
+  const response = await worker.fetch(request("/api/session/new", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${opened.token}` },
+  }), env, context);
+  assert.equal(response.status, 200);
+  const renewed = await response.json();
+  const secondId = db.tickets.get(1).claimed_session_id;
+  assert.notEqual(secondId, firstId);
+  assert.equal(renewed.session.remainingTokens, 2000);
+  assert.equal(db.sessions.size, 2);
+  assert.equal(db.sessions.get(firstId).used_tokens, 2000);
+});
+
+test("a ticket re-entry replaces an exhausted or expired session", async () => {
+  const db = new FakeD1();
+  const env = { ...environment(db), PRACTICE_MODE: "false" };
+  const code = await addTicket(db);
+  const context = { waitUntil() {} };
+  await worker.fetch(request("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticket: code }),
+  }), env, context);
+  const firstId = db.tickets.get(1).claimed_session_id;
+  db.sessions.get(firstId).expires_at = "2000-01-01T00:00:00.000Z";
+
+  const response = await worker.fetch(request("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticket: code }),
+  }), env, context);
+  assert.equal(response.status, 200);
+  const reopened = await response.json();
+  assert.equal(reopened.session.remainingTokens, 2000);
+  assert.notEqual(db.tickets.get(1).claimed_session_id, firstId);
+});
+
+test("a new session is rejected while the current session still has tokens", async () => {
+  const db = new FakeD1();
+  const env = { ...environment(db), PRACTICE_MODE: "false" };
+  const code = await addTicket(db);
+  const context = { waitUntil() {} };
+  const opened = await (await worker.fetch(request("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticket: code }),
+  }), env, context)).json();
+
+  const response = await worker.fetch(request("/api/session/new", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${opened.token}` },
+  }), env, context);
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).message, /dùng hết token/);
+  assert.equal(db.sessions.size, 1);
 });
