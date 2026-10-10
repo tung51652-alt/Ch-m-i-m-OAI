@@ -26,7 +26,7 @@ jobs:
         run: python -m unittest discover -v -p "test_*.py"
 
       - name: Browser grader tests
-        run: node --test test_grader.js
+        run: node --test test_grader.js test_ghost_browser.js
 
       - name: Build site
         run: python scripts/build_site.py --out "${RUNNER_TEMP}/_site"

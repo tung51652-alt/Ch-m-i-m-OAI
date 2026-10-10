@@ -11,7 +11,7 @@
   // Strings pandas.read_csv turns into NaN by default (keep_default_na=True).
   const NA_VALUES = new Set(["", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "-nan", "1.#IND",
     "1.#QNAN", "<NA>", "N/A", "NA", "NULL", "NaN", "None", "n/a", "nan", "null"]);
-  const ACCEPTED_ZIP_NAMES = new Set(["output.csv", "submission.csv"]);
+  const ACCEPTED_ZIP_NAMES = new Set(["output.csv", "submission.csv", "answers.jsonl"]);
   const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
 
   const n = (v) => Number(v).toLocaleString("en-US");          // Python f"{v:,}"
@@ -69,6 +69,24 @@
     return { columns: header, rows: records };
   }
 
+  function parseJsonl(text) {
+    const rows = [];
+    text.replace(/^\ufeff/, "").split(/\r?\n/).forEach((line, index) => {
+      if (!line.trim()) return;
+      let row;
+      try { row = JSON.parse(line); }
+      catch (error) { throw new SubmissionReadError(`JSONL sai cấu trúc ở dòng ${index + 1}.`); }
+      if (!row || typeof row !== "object" || Array.isArray(row) ||
+          Object.keys(row).length !== 2 || !("id" in row) || !("boundary_char_index" in row)) {
+        throw new SubmissionReadError(`JSONL dòng ${index + 1} cần đúng hai trường id và boundary_char_index.`);
+      }
+      if (typeof row.id !== "string" || !row.id.trim()) throw new SubmissionReadError(`JSONL dòng ${index + 1}: id phải là chuỗi không rỗng.`);
+      rows.push(row);
+    });
+    if (!rows.length) throw new SubmissionReadError("JSONL đang rỗng.");
+    return { columns: ["id", "boundary_char_index"], rows };
+  }
+
   function decodeUtf8(bytes, sourceName) {
     try {
       return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -99,7 +117,8 @@
     if (lower.endsWith(".csv")) {
       return { ...parseCsv(decodeUtf8(bytes, name || "submission.csv"), name || "submission.csv"), internalName: name };
     }
-    if (!lower.endsWith(".zip")) throw new SubmissionReadError("Chỉ hỗ trợ file .csv hoặc .zip.");
+    if (lower.endsWith(".jsonl")) return { ...parseJsonl(decodeUtf8(bytes, name)), internalName: name };
+    if (!lower.endsWith(".zip")) throw new SubmissionReadError("Chỉ hỗ trợ file .csv, .jsonl hoặc .zip.");
 
     const JSZip = await loadJSZip();
     let archive;
@@ -110,15 +129,17 @@
     }
     const matches = Object.values(archive.files).filter((entry) =>
       !entry.dir && ACCEPTED_ZIP_NAMES.has(entry.name.split("/").pop().toLowerCase()));
-    if (!matches.length) throw new SubmissionReadError("Không tìm thấy submission.csv hoặc output.csv trong ZIP.");
-    if (matches.length > 1) throw new SubmissionReadError("ZIP chứa nhiều file submission.csv/output.csv; không thể chọn an toàn.");
+    if (!matches.length) throw new SubmissionReadError("Không tìm thấy submission.csv, output.csv hoặc answers.jsonl trong ZIP.");
+    if (matches.length > 1) throw new SubmissionReadError("ZIP chứa nhiều file dự đoán; không thể chọn an toàn.");
     let inner;
     try {
       inner = await matches[0].async("uint8array");
     } catch (e) {
       throw new SubmissionReadError("Không đọc được output.csv trong ZIP; file có thể đã được mã hóa.");
     }
-    return { ...parseCsv(decodeUtf8(inner, matches[0].name), matches[0].name), internalName: matches[0].name };
+    const text = decodeUtf8(inner, matches[0].name);
+    const parsed = matches[0].name.toLowerCase().endsWith(".jsonl") ? parseJsonl(text) : parseCsv(text, matches[0].name);
+    return { ...parsed, internalName: matches[0].name };
   }
 
   // ---------- validation (scoring.validate_submission) ----------
@@ -369,7 +390,7 @@
   }
 
   window.OAIGrader = {
-    SubmissionReadError, readSubmission, parseCsv, validate, grade, macroF1,
+    SubmissionReadError, readSubmission, parseCsv, parseJsonl, validate, grade, macroF1,
     gradeLexicalNormalization, evaluateLexicalNormalization, levenshteinDistance, encodePrediction,
   };
 })();

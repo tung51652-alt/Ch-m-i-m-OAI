@@ -61,6 +61,7 @@ task_labels = {
     "Tác vụ 1 — Computer Vision: DeepWeeds": "cv",
     "Tác vụ 2 — NLP: Vietnamese Spam Review Detection": "nlp",
     "Tác vụ 3 — NLP: ViLexNorm": "vilexnorm",
+    "Tác vụ 4 — NLP: Ghost of the Machine": "ghost",
 }
 split_labels = {"Public Test": "public", "Private Test": "private"}
 
@@ -145,18 +146,24 @@ with tab_grade:
             split = split_labels[selected_split_label]
         uploaded_file = st.file_uploader(
             "Upload submission",
-            type=["csv", "zip"],
-            help="CSV trực tiếp hoặc ZIP chứa đúng một file submission.csv/output.csv",
+            type=["csv", "zip", "jsonl"] if selected_task == "ghost" else ["csv", "zip"],
+            help="Ghost: answers.jsonl hoặc CSV id,boundary_char_index; ZIP chứa đúng một file dự đoán." if selected_task == "ghost" else "CSV trực tiếp hoặc ZIP chứa đúng một file submission.csv/output.csv",
         )
         if uploaded_file is not None:
             st.caption(f"Đã chọn: `{uploaded_file.name}`")
         grade_clicked = st.button("CHẤM ĐIỂM", type="primary", width="stretch")
 
+    if selected_task == "ghost":
+        st.info("Tìm vị trí ký tự chuyển từ người viết sang máy sinh. Public = Leaderboard A; Private = Leaderboard B (xếp hạng cuối), 380 mẫu mỗi tập.")
+        st.code('id,boundary_char_index\nexample_000123,1790', language="csv")
+        st.latex(r"Score = \frac{100}{N}\sum_{i=1}^{N}\exp(-|p_i-t_i|/100)")
+        st.caption("Boundary là số nguyên từ 0 đến len(text), tính theo ký tự Unicode như Python. Điểm 0–100; càng cao càng tốt. Nộp output của notebook, không nộp notebook.")
+
     if grade_clicked:
         if not team_name:
             st.error("Vui lòng nhập tên đội trước khi chấm.")
         elif uploaded_file is None:
-            st.error("Vui lòng upload một file .csv hoặc .zip trước khi chấm.")
+            st.error("Vui lòng upload một file .csv, .jsonl hoặc .zip trước khi chấm.")
         else:
             task = selected_task
             config = get_task_config(task)
@@ -201,7 +208,7 @@ with tab_grade:
                         st.info(f"Đội **{team_name}** chưa được xếp hạng: cần một bài hợp lệ trên {SPLIT_DISPLAY[rank_split]}.")
                     st.caption(f"Đã lưu vào lịch sử (`{saved['id']}`).")
 
-                    if task == "vilexnorm":
+                    if task in {"vilexnorm", "ghost"}:
                         st.subheader("Metrics phụ")
                         secondary = result["secondary_metrics"]
                         columns = st.columns(3)

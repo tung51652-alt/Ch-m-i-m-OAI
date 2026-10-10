@@ -37,6 +37,12 @@ class TaskConfig:
 
 
 TASKS: dict[str, TaskConfig] = {
+    "ghost": TaskConfig(
+        key="ghost", display_name="NLP — Ghost of the Machine",
+        short_name="Ghost of the Machine", id_col="id", label_col="boundary_char_index",
+        organizer_dir=ROOT / "nlp" / "GhostofMachine" / "ioai_ghost",
+        metric_kind="boundary_detection",
+    ),
     "cv": TaskConfig(
         key="cv",
         display_name="Computer Vision — DeepWeeds",
@@ -86,6 +92,9 @@ def get_task_config(task: str) -> TaskConfig:
 def load_ground_truth(task: str, split: str) -> pd.DataFrame:
     """Load an organizer ground truth file without exposing it to the UI."""
     config = get_task_config(task)
+    if config.metric_kind == "boundary_detection":
+        from ghost_scoring import load_truth
+        return load_truth(config.organizer_dir, split)
     if config.metric_kind == "lexical_normalization":
         if split != "test":
             raise ValueError(f"Tác vụ ViLexNorm chỉ có Test Set; nhận {split!r}.")
@@ -148,20 +157,30 @@ def _read_csv_bytes(data: bytes, source_name: str) -> pd.DataFrame:
         raise SubmissionReadError(f"Không thể đọc CSV {source_name}: {exc}.") from exc
 
 
+def _read_jsonl_bytes(data: bytes, source_name: str) -> pd.DataFrame:
+    from ghost_scoring import parse_jsonl
+    try:
+        return parse_jsonl(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise SubmissionReadError(f"Không đọc được {source_name}: {exc}") from exc
+
+
 def read_submission(uploaded_file: BinaryIO) -> tuple[pd.DataFrame, str]:
-    """Read CSV or exactly one submission.csv/output.csv inside an in-memory ZIP."""
+    """Read CSV/JSONL or one recognized prediction file inside an in-memory ZIP."""
     upload_name, data = _uploaded_bytes(uploaded_file)
     suffix = Path(upload_name).suffix.lower()
 
     if suffix == ".csv":
         return _read_csv_bytes(data, upload_name or "submission.csv"), upload_name
 
+    if suffix == ".jsonl":
+        return _read_jsonl_bytes(data, upload_name), upload_name
     if suffix != ".zip":
-        raise SubmissionReadError("Chỉ hỗ trợ file .csv hoặc .zip.")
+        raise SubmissionReadError("Chỉ hỗ trợ file .csv, .jsonl hoặc .zip.")
 
     try:
         with ZipFile(BytesIO(data)) as archive:
-            accepted_names = {"output.csv", "submission.csv"}
+            accepted_names = {"output.csv", "submission.csv", "answers.jsonl"}
             matches = [
                 member
                 for member in archive.infolist()
@@ -169,15 +188,16 @@ def read_submission(uploaded_file: BinaryIO) -> tuple[pd.DataFrame, str]:
                 and PurePosixPath(member.filename).name.lower() in accepted_names
             ]
             if not matches:
-                raise SubmissionReadError("Không tìm thấy submission.csv hoặc output.csv trong ZIP.")
+                raise SubmissionReadError("Không tìm thấy submission.csv, output.csv hoặc answers.jsonl trong ZIP.")
             if len(matches) > 1:
-                raise SubmissionReadError("ZIP chứa nhiều file submission.csv/output.csv; không thể chọn an toàn.")
+                raise SubmissionReadError("ZIP chứa nhiều file dự đoán; không thể chọn an toàn.")
             member = matches[0]
             try:
                 csv_data = archive.read(member)
             except RuntimeError as exc:
                 raise SubmissionReadError("Không đọc được output.csv trong ZIP; file có thể đã được mã hóa.") from exc
-            return _read_csv_bytes(csv_data, member.filename), member.filename
+            reader = _read_jsonl_bytes if member.filename.lower().endswith(".jsonl") else _read_csv_bytes
+            return reader(csv_data, member.filename), member.filename
     except SubmissionReadError:
         raise
     except BadZipFile as exc:
@@ -442,6 +462,9 @@ def score_vilexnorm_submission(
 def grade_submission(task: str, split: str, submission_df: pd.DataFrame) -> dict[str, Any]:
     config = get_task_config(task)
     ground_truth = load_ground_truth(task, split)
+    if config.metric_kind == "boundary_detection":
+        from ghost_scoring import score
+        return score(submission_df, ground_truth)
     if config.metric_kind == "lexical_normalization":
         return score_vilexnorm_submission(submission_df, ground_truth, load_test_input(config))
     return score_submission(submission_df, ground_truth, config.id_col, config.label_col)

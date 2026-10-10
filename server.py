@@ -111,7 +111,7 @@ async def submit(request: Request) -> JSONResponse:
     if split not in task_splits(task):
         return error("Tập đánh giá không hợp lệ.")
     if upload is None or not getattr(upload, "filename", ""):
-        return error("Vui lòng chọn file .csv hoặc .zip.")
+        return error("Vui lòng chọn file .csv, .jsonl hoặc .zip.")
 
     data = await upload.read()
     if len(data) > MAX_UPLOAD_BYTES:

@@ -218,7 +218,7 @@
           </label>
           <div class="field">File dự đoán
             <label class="drop" id="drop">
-              <input type="file" name="file" id="file" accept=".csv,.zip">
+              <input type="file" name="file" id="file" accept=".csv,.zip,.jsonl">
               <span id="drop-text"></span>
             </label>
           </div>
@@ -231,7 +231,7 @@
     <div class="panel" id="submit-issue" hidden>
       <div class="panel-head"><h2>Nộp bài qua GitHub</h2></div>
       <div class="panel-body">
-        <p class="notice">Mở form nộp bài, chọn tác vụ và tập đánh giá, kéo thả file <code>.csv</code> hoặc <code>.zip</code> rồi bấm Submit.
+        <p class="notice">Mở form nộp bài, chọn tác vụ và tập đánh giá, kéo thả file <code>.csv</code>, <code>.jsonl</code> hoặc <code>.zip</code> rồi bấm Submit.
           Kết quả được comment vào issue sau khoảng một phút.</p>
         <a class="primary" style="display:inline-grid;place-items:center;padding:0 18px;text-decoration:none" id="issue-link" href="#" target="_blank" rel="noopener">Mở form nộp bài</a>
       </div>
@@ -249,6 +249,7 @@
 </main>
 
 <script src="grader.js"></script>
+<script src="ghost-grader.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -263,6 +264,7 @@
     cv: "Tác vụ 1 — Computer Vision: DeepWeeds",
     nlp: "Tác vụ 2 — NLP: Vietnamese Spam Review Detection",
     vilexnorm: "Tác vụ 3 — NLP: ViLexNorm",
+    ghost: "Tác vụ 4 — NLP: Ghost of the Machine",
   };
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
   const num = (n) => Number(n).toLocaleString("vi-VN");
@@ -391,6 +393,36 @@
     const mode = MAX_UPLOAD_MB[data.submit_mode] ? data.submit_mode : "issue";
     const row = (label, ...cells) => el("tr", {}, el("th", { scope: "row" }, label), el("td", {}, ...cells));
 
+    if (task.metric_kind === "boundary_detection") {
+      const exampleTruth = (((data.ground_truth || {}).ghost || {})[split] || {});
+      const exampleId = exampleTruth.ids ? exampleTruth.ids[0] : (req.example || [["example_000123"]])[0][0];
+      $("req-card").replaceChildren(
+        panelHead("Yêu cầu file nộp", task.name),
+        el("table", { class: "spec" }, el("tbody", {},
+          row("Bài toán", "Tìm chỉ số ký tự nơi văn bản người viết chuyển sang phần máy sinh."),
+          row("Định dạng", el("code", {}, "answers.jsonl"), " UTF-8; hoặc CSV id,boundary_char_index; ZIP chứa đúng một answers.jsonl, output.csv hoặc submission.csv."),
+          row("Tập đánh giá", "Public Test = Leaderboard A (trực tiếp); Private Test = Leaderboard B (xếp hạng cuối)."),
+          row("Số mẫu", req.rows ? `${num(req.rows.public)} mẫu A · ${num(req.rows.private)} mẫu B` : "380 mẫu mỗi tập."),
+          row("Prediction", "Số nguyên từ 0 đến len(text), tính theo ký tự Unicode như Python, không phải byte hay token. Mỗi ID đúng một lần, thứ tự dòng tùy ý."),
+          row("Ví dụ JSONL", el("pre", { class: "example" }, JSON.stringify({ id: exampleId, boundary_char_index: 0 }))))),
+        el("div", { class: "foot" }, "Nộp file dự đoán do notebook xuất ra. ID thiếu, trùng, lạ hoặc boundary sai kiểu/phạm vi sẽ bị từ chối."),
+        el("div", { class: "panel-body" },
+          el("div", {}, el("a", { href: "ghost/dataset.zip", download: "ghost-dataset.zip" }, "Tải dữ liệu luyện tập và test A/B (không kèm đáp án A/B)")),
+          el("div", {}, el("a", { href: "ghost/sample_public_answers.jsonl", download: "answers.jsonl" }, "File mẫu Leaderboard A"), " · ",
+            el("a", { href: "ghost/sample_private_answers.jsonl", download: "answers.jsonl" }, "File mẫu Leaderboard B")),
+          el("div", {}, el("a", { href: "https://github.com/IOAI-official/IOAI-2026/tree/main/Individual-Contest/5_Ghost_of_Machine", target: "_blank", rel: "noopener" }, "Đề, baseline và checker gốc IOAI"), " · ",
+            el("a", { href: "https://huggingface.co/datasets/IOAI-official/ioai-2026-ghost-of-the-machine", target: "_blank", rel: "noopener" }, "Nguồn dữ liệu (CC BY 4.0)"))));
+      $("metric-card").replaceChildren(
+        panelHead("Chỉ số đánh giá: Boundary Score", "0–100 · càng cao càng tốt"),
+        el("div", { class: "panel-body" },
+          el("div", { class: "eqs" }, el("div", { class: "eq" }, "Score = 100 × mean(exp(−|p − t| / 100))")),
+          el("ul", { class: "notes" },
+            el("li", {}, "p là vị trí dự đoán, t là vị trí thật. Đúng hoàn toàn = 100; lệch 25 ký tự ≈ 77.88; 50 ≈ 60.65; 100 ≈ 36.79; 500 ≈ 0.67."),
+            el("li", {}, "Mean Absolute Error (chars) và Exact Match (%) chỉ để phân tích, không dùng xếp hạng."),
+            el("li", {}, "Xếp hạng theo điểm Private / Leaderboard B tốt nhất; hòa điểm thì so Public / A, sau đó thời điểm đạt điểm. Lưu điểm đầy đủ, hiển thị 6 chữ số thập phân."))));
+      return;
+    }
+
     const rowsCell = req.rows
       ? [el("div", {}, ...task.splits.map((s, i) => el("span", { class: !split || s === split ? "" : "hint" },
           i ? "   ·   " : "", el("b", { class: "num" }, num(req.rows[s])), ` ${data.split_names[s]}`))),
@@ -497,7 +529,8 @@
     if (data.tasks.some((t) => t.key === savedTask)) taskSel.value = savedTask;
     const fillSplits = () => {
       const task = data.tasks.find((t) => t.key === taskSel.value);
-      splitSel.replaceChildren(...task.splits.map((s) => el("option", { value: s }, data.split_names[s])));
+      splitSel.replaceChildren(...task.splits.map((s) => el("option", { value: s }, task.key === "ghost" ? `${data.split_names[s]} · Leaderboard ${s === "public" ? "A" : "B"}` : data.split_names[s])));
+      $("file").accept = task.key === "ghost" ? ".csv,.zip,.jsonl" : ".csv,.zip";
       renderInfo(task.key, splitSel.value);
     };
     taskSel.addEventListener("change", fillSplits);
@@ -511,7 +544,7 @@
       drop.classList.toggle("has-file", !!f);
       $("drop-text").replaceChildren(...(f
         ? [el("b", {}, f.name), ` · ${(f.size / 1024).toFixed(1)} KB · bấm để đổi file`]
-        : [el("b", {}, "Chọn file"), " hoặc kéo thả file .csv / .zip vào đây"]));
+        : [el("b", {}, "Chọn file"), " hoặc kéo thả file .csv / .jsonl / .zip vào đây"]));
     };
     showFile();
     fileInput.addEventListener("change", showFile);
@@ -522,7 +555,7 @@
       e.preventDefault();
       const team = $("team").value.trim();
       if (!team) return showResult(errorBox("Vui lòng chọn đội."));
-      if (!fileInput.files[0]) return showResult(errorBox("Vui lòng chọn file .csv hoặc .zip."));
+      if (!fileInput.files[0]) return showResult(errorBox("Vui lòng chọn file .csv, .jsonl hoặc .zip."));
       store.set("oai-team", team); store.set("oai-task", taskSel.value);
       const btn = $("submit-btn");
       btn.disabled = true; btn.textContent = "Đang chấm…";
@@ -640,7 +673,9 @@
       }
       throw e;
     }
-    const result = task.metric_kind === "lexical_normalization"
+    const result = task.metric_kind === "boundary_detection"
+      ? OAIGhostGrader.grade(sub, truth)
+      : task.metric_kind === "lexical_normalization"
       ? OAIGrader.gradeLexicalNormalization(sub, truth, idCol, labelCol)
       : OAIGrader.grade(sub, truth, idCol, labelCol);
     const submission = { team, task: taskKey, split, ...result };
@@ -653,11 +688,11 @@
     }
     const box = resultBox({ submission, standing });
     if (result.valid) {
-      if (task.metric_kind === "lexical_normalization") {
+      if (["lexical_normalization", "boundary_detection"].includes(task.metric_kind)) {
         box.append(el("div", { class: "save-box" },
-          el("div", {}, "Điểm và hạng ở trên là dự kiến và chưa được lưu. Với ViLexNorm, file chứa văn bản tự do nên không thể nhét an toàn vào URL GitHub. ",
-            "Hãy mở form, chọn đúng ViLexNorm / Test Set, đính kèm chính file vừa chấm rồi bấm Submit."),
-          el("a", { class: "primary", target: "_blank", rel: "noopener", href: issueUrl({}) }, "Mở form và đính kèm file")));
+          el("div", {}, "Điểm và hạng ở trên là dự kiến và chưa được lưu. ",
+            `Hãy mở form, chọn ${task.name} / ${data.split_names[split]}, đính kèm chính file vừa chấm rồi bấm Submit.`),
+          el("a", { class: "primary", target: "_blank", rel: "noopener", href: issueUrl({ team, task: ISSUE_TASK_LABEL[taskKey], split: split === "test" ? "Test Set (ViLexNorm)" : data.split_names[split] }) }, "Mở form và đính kèm file")));
         return box;
       }
       const code = await OAIGrader.encodePrediction(sub, truth, idCol, labelCol, { task: taskKey, split, file_name: file.name });

@@ -28,6 +28,10 @@ FILES=(
   T5/OAI_ViLexNorm/organizer/test_ground_truth.csv
   T5/OAI_ViLexNorm/organizer/evaluate.py
   T5/OAI_ViLexNorm/competition/test/test.csv
+  nlp/GhostofMachine/ioai_ghost/private/test_leaderboard_a/data.jsonl
+  nlp/GhostofMachine/ioai_ghost/private/test_leaderboard_a_answers.jsonl
+  nlp/GhostofMachine/ioai_ghost/private/test_leaderboard_b/data.jsonl
+  nlp/GhostofMachine/ioai_ghost/private/test_leaderboard_b_answers.jsonl
 )
 
 present=()

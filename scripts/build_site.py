@@ -35,6 +35,8 @@ def ground_truth_payload() -> dict:
                 "ids": frame[config.id_col].astype(str).tolist(),
                 "labels": frame[config.label_col].astype(str).tolist(),
             }
+            if config.metric_kind == "boundary_detection":
+                truth[task][split]["text_lengths"] = frame["text_length"].astype(int).tolist()
             if config.metric_kind == "lexical_normalization":
                 test_input = load_test_input(config)
                 truth[task][split]["originals"] = test_input["original"].astype(str).tolist()

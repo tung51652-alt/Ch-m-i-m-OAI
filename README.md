@@ -1,6 +1,6 @@
 # OAI — Local Grading System
 
-Hệ thống chấm local và online cho ba tác vụ: DeepWeeds (phân loại ảnh 9 lớp), Vietnamese Spam Review Detection (4 nhãn `0`–`3`) và ViLexNorm (chuẩn hóa từ vựng tiếng Việt). Hai bài phân loại có Public/Private Test và dùng Macro-F1; ViLexNorm có một Test Set và dùng Error Reduction Rate (ERR).
+Hệ thống chấm local và online cho DeepWeeds, Spam Review, ViLexNorm và Ghost of the Machine. Ba tác vụ ban đầu: DeepWeeds (phân loại ảnh 9 lớp), Vietnamese Spam Review Detection (4 nhãn `0`–`3`) và ViLexNorm (chuẩn hóa từ vựng tiếng Việt). Hai bài phân loại có Public/Private Test và dùng Macro-F1; ViLexNorm có một Test Set và dùng Error Reduction Rate (ERR).
 
 ## 1. Cài đặt
 
@@ -157,3 +157,45 @@ Sau khi đăng nhập trang chấm điểm, bấm **Trợ lý AI** để chuyể
 <https://chatbot-gamma-plum-29.vercel.app/> trong cùng tab.
 
 Chatbot được triển khai riêng; dự án chấm điểm chỉ chứa liên kết đến trang này.
+
+## 7. Ghost of the Machine (IOAI 2026)
+
+Bài NLP tìm chỉ số ký tự nơi đoạn văn tiếng Anh chuyển từ người viết sang máy sinh.
+Đã đối chiếu [README và đề IOAI](https://github.com/IOAI-official/IOAI-2026/tree/main/Individual-Contest/5_Ghost_of_Machine),
+[checker gốc](https://github.com/IOAI-official/IOAI-2026/blob/main/Individual-Contest/5_Ghost_of_Machine/code/grading-original/checker.py),
+[baseline gốc](https://github.com/IOAI-official/IOAI-2026/blob/main/Individual-Contest/5_Ghost_of_Machine/code/baseline-original/solution.ipynb)
+và [dataset card](https://huggingface.co/datasets/IOAI-official/ioai-2026-ghost-of-the-machine).
+
+- Train: 1.221 mẫu; dry-run: pretrain 200, pretest 60.
+- **Public Test = Leaderboard A**, 380 mẫu, bảng điểm trực tiếp.
+- **Private Test = Leaderboard B**, 380 mẫu, xếp hạng cuối.
+- Nộp **answers.jsonl** UTF-8, mỗi dòng là `{"id":"example_000123","boundary_char_index":1790}`.
+  Có thể dùng CSV `id,boundary_char_index` hoặc ZIP chứa đúng một `answers.jsonl`, `output.csv` hay `submission.csv`.
+- Mỗi ID test đúng một lần; thứ tự tùy ý. Boundary là số nguyên trong `[0, len(text)]`,
+  tính theo Unicode code point như Python; không tính theo byte, UTF-16 hay token.
+- **Boundary Score = 100 × mean(exp(-abs(prediction - truth) / 100))**. Điểm cao hơn tốt hơn.
+  MAE (ký tự) và Exact Match (%) là thông tin phụ. Lưu điểm đầy đủ, hiển thị 6 chữ số thập phân.
+- Xếp hạng như các bài Public/Private trước: điểm B tốt nhất, rồi A, rồi thời điểm đạt điểm.
+
+Trong cuộc thi gốc, người dự thi nộp `solution.ipynb` và grader chạy notebook để tạo `answers.jsonl`.
+Website này chấm **file dự đoán đã xuất**, không thực thi notebook/GPU hay kiểm tra giới hạn model/thời gian.
+Đề cho phép encoder `bge-base-en-v1.5`; baseline dùng trung bình vị trí tương đối trong train.
+
+**Khác biệt validation:** đề nói mẫu thiếu/sai nhận 0, nhưng checker gốc từ chối toàn bài nếu
+thiếu, trùng, lạ ID hoặc không chuyển được prediction thành số nguyên. Website theo checker ở việc
+kiểm tra ID, và kiểm tra số nguyên/phạm vi chặt theo đề: không tự cắt phần thập phân hay chấp nhận bool.
+Công thức và thang điểm của bài hợp lệ khớp checker gốc.
+
+Dữ liệu local mặc định: `../nlp/GhostofMachine/ioai_ghost/`; có thể đổi thư mục gốc bằng `GRADER_DATA_ROOT`.
+Gói chấm mã hóa chứa `private/test_leaderboard_{a,b}/data.jsonl` và hai file đáp án tương ứng.
+Trang có gói tải `ghost/dataset.zip` chứa train/dry-run và đầu vào A/B, **không có đáp án A/B**.
+Dữ liệu IOAI được phát hành theo **CC BY 4.0**; giữ ghi công trong gói tải.
+
+Kiểm tra UI Ghost bằng Chromium (cài Playwright ở môi trường kiểm thử):
+
+```bash
+SITE_URL=http://localhost:8000/ GRADER_PASSWORD='mật-khẩu' node scripts/test_ghost_pages.cjs
+```
+
+Smoke test này dùng **bản build tĩnh mã hóa**, xác nhận điểm 100 trên A/B cho JSONL/CSV/ZIP,
+đảo dòng, từ chối ID thiếu, hiển thị bảng xếp hạng và điền sẵn form GitHub.

@@ -57,6 +57,7 @@ TASK_OPTIONS = {
     "Tác vụ 1 — Computer Vision: DeepWeeds": "cv",
     "Tác vụ 2 — NLP: Vietnamese Spam Review Detection": "nlp",
     "Tác vụ 3 — NLP: ViLexNorm": "vilexnorm",
+    "Tác vụ 4 — NLP: Ghost of the Machine": "ghost",
 }
 SPLIT_OPTIONS = {
     "Public Test": "public",
@@ -126,11 +127,11 @@ def find_attachment(text: str, repository: str) -> tuple[str, str]:
                 f"/{repository.lower()}/files/"
             )
         name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
-        if is_upload and name.lower().endswith((".csv", ".zip")) and url not in [c[0] for c in candidates]:
+        if is_upload and name.lower().endswith((".csv", ".zip", ".jsonl")) and url not in [c[0] for c in candidates]:
             candidates.append((url, name))
     if not candidates:
         raise SubmissionProblem(
-            "Không tìm thấy file .csv/.zip đính kèm. Hãy **kéo thả file** vào ô *File submission* "
+            "Không tìm thấy file .csv/.jsonl/.zip đính kèm. Hãy **kéo thả file** vào ô *File submission* "
             "và chờ GitHub upload xong trước khi bấm Submit, hoặc dán link raw của Gist."
         )
     if len(candidates) > 1:
