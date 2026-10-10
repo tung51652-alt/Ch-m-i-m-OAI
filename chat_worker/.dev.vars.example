@@ -1,2 +1,0 @@
-SESSION_SIGNING_KEY=replace_with_at_least_32_random_characters
-ADMIN_KEY=replace_with_a_separate_random_admin_key

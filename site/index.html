@@ -183,7 +183,7 @@
   </nav>
   <div class="bar-meta">
     <span id="updated"></span>
-    <a class="link-btn" id="chat-link" href="chat.html" hidden>Trợ lý AI</a>
+    <a class="link-btn" id="chat-link" href="https://chatbot-gamma-plum-29.vercel.app/" hidden>Trợ lý AI</a>
     <button type="button" class="link-btn" id="logout" hidden>Đăng xuất</button>
   </div>
 </header>
@@ -248,7 +248,6 @@
   </section>
 </main>
 
-<script src="chat-config.js"></script>
 <script src="grader.js"></script>
 <script>
 (function () {
@@ -345,7 +344,7 @@
     $("view-login").hidden = true;
     $("app").hidden = false;
     $("tabs").hidden = false;
-    $("chat-link").hidden = !(window.OAI_CHAT_CONFIG && window.OAI_CHAT_CONFIG.apiUrl);
+    $("chat-link").hidden = false;
     $("logout").hidden = false;
     if (!submitReady) { setupSubmit(); submitReady = true; }
     showView(currentView);

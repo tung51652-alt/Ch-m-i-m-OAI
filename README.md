@@ -151,17 +151,9 @@ python3 -m unittest discover -p "test_*.py"
 
 Test dùng dữ liệu tổng hợp, không cần đáp án thật; các test với đáp án thật tự bỏ qua khi máy không có dữ liệu.
 
-## 6. Trợ lý AI cho phiên thi
+## 6. Trợ lý AI
 
-Trang `chat.html` cung cấp giao diện chat tách khỏi grader để không làm nặng luồng chấm bài. Trình duyệt chỉ chạy HTML/CSS/JavaScript và giữ session token trong `sessionStorage`; nội dung hội thoại không được ghi vào localStorage hay database của website.
+Sau khi đăng nhập trang chấm điểm, bấm **Trợ lý AI** để chuyển sang chatbot tại
+<https://chatbot-gamma-plum-29.vercel.app/> trong cùng tab.
 
-Backend nằm trong `chat_worker/` và được thiết kế cho Cloudflare Worker + D1:
-
-- Model là `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` qua Cloudflare Workers AI binding; không cần Hugging Face/OpenRouter API key, không tải model về máy.
-- Khóa ký session và khóa quản trị chỉ nằm trong Worker secrets.
-- Mỗi ticket nhận một session có 2.000 completion token, bao gồm token suy luận. Khi dùng hết quota hoặc session hết hạn, cùng ticket có thể tạo session mới.
-- D1 chỉ lưu hash ticket, session, quota và thời hạn; không lưu prompt hoặc câu trả lời.
-- Mỗi phiên chỉ chạy một lượt sinh tại một thời điểm và giữ trước quota để tránh vượt giới hạn khi mở nhiều tab.
-- Chatbox có trần mặc định 9.000 neuron/ngày cho toàn bộ người dùng, dưới quota miễn phí Cloudflare 10.000 neuron/ngày. Reset lúc 7 giờ sáng Việt Nam; tạo session mới không reset ngân sách ngày. Trần ứng dụng không tính các ứng dụng Workers AI khác trên cùng tài khoản.
-
-Xem hướng dẫn deploy, tạo ticket và chạy local tại [`chat_worker/README.md`](chat_worker/README.md).
+Chatbot được triển khai riêng; dự án chấm điểm chỉ chứa liên kết đến trang này.
