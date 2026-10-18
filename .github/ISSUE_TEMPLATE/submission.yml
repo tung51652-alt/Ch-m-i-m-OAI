@@ -1,5 +1,5 @@
 name: Nộp bài chấm điểm
-description: Nộp file dự đoán (.csv, .jsonl hoặc .zip) để hệ thống tự chấm và cập nhật bảng xếp hạng.
+description: Nộp file dự đoán (.csv, .jsonl, .npy hoặc .zip) để hệ thống tự chấm và cập nhật bảng xếp hạng.
 title: "[Submission] "
 labels: ["submission"]
 body:
@@ -12,6 +12,8 @@ body:
         DeepWeeds/Spam Review dùng Public hoặc Private Test; ViLexNorm chỉ dùng Test Set.
         Ghost: Public = Leaderboard A; Private = Leaderboard B (380 mẫu/tập). Nộp `answers.jsonl` hoặc CSV `id,boundary_char_index`.
         Ghost dùng Boundary Score 0–100; chỉ số là số nguyên trong [0, len(text)]. ZIP Ghost chứa đúng một `answers.jsonl` hoặc CSV.
+        Restroom: Public/A nộp `submission_a.npy` (10 query), Private/B nộp `submission_b.npy` (30 query); hoặc ZIP chứa cả hai, hệ thống lấy file theo tập đã chọn. Có thể dùng CSV `query_id,gallery_id`.
+        Gallery ID bắt đầu từ 1; Restroom chấm Precision@1 từ 0 đến 1.
         File ZIP cho các bài cũ phải chứa đúng một file `submission.csv` hoặc `output.csv`.
   - type: dropdown
     id: team
@@ -32,6 +34,7 @@ body:
         - "Tác vụ 2 — NLP: Vietnamese Spam Review Detection"
         - "Tác vụ 3 — NLP: ViLexNorm"
         - "Tác vụ 4 — NLP: Ghost of the Machine"
+        - "Tác vụ 5 — Computer Vision: Restroom Icon Matching"
     validations:
       required: true
   - type: dropdown
@@ -48,7 +51,7 @@ body:
     id: file
     attributes:
       label: File submission
-      description: Kéo thả file .csv, .jsonl hoặc .zip vào ô này và chờ GitHub upload xong (hiện ra một đường link) rồi mới bấm Submit. Hoặc dán link raw của một Gist (gist.githubusercontent.com/.../raw/.../output.csv).
+      description: Kéo thả file .csv, .jsonl, .npy hoặc .zip vào ô này và chờ GitHub upload xong (hiện ra một đường link) rồi mới bấm Submit. Hoặc dán link raw của một Gist (gist.githubusercontent.com/.../raw/.../output.csv).
       placeholder: Kéo thả file vào đây
     validations:
       required: true

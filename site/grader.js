@@ -390,7 +390,7 @@
   }
 
   window.OAIGrader = {
-    SubmissionReadError, readSubmission, parseCsv, parseJsonl, validate, grade, macroF1,
+    SubmissionReadError, readSubmission, loadJSZip, parseCsv, parseJsonl, validate, grade, macroF1,
     gradeLexicalNormalization, evaluateLexicalNormalization, levenshteinDistance, encodePrediction,
   };
 })();

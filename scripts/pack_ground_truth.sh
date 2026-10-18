@@ -21,6 +21,8 @@ fi
 export GRADER_DATA_KEY
 
 FILES=(
+  Restroom/Solution/Scoring/answer_a.npy
+  Restroom/Solution/Scoring/answer_b.npy
   Tac_vu_1_CV/organizer/public_ground_truth.csv
   Tac_vu_1_CV/organizer/private_ground_truth.csv
   Tac_vu_2_NLP/organizer/public_ground_truth.csv

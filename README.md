@@ -1,6 +1,6 @@
 # OAI — Local Grading System
 
-Hệ thống chấm local và online cho DeepWeeds, Spam Review, ViLexNorm và Ghost of the Machine. Ba tác vụ ban đầu: DeepWeeds (phân loại ảnh 9 lớp), Vietnamese Spam Review Detection (4 nhãn `0`–`3`) và ViLexNorm (chuẩn hóa từ vựng tiếng Việt). Hai bài phân loại có Public/Private Test và dùng Macro-F1; ViLexNorm có một Test Set và dùng Error Reduction Rate (ERR).
+Hệ thống chấm local và online cho DeepWeeds, Spam Review, ViLexNorm, Ghost of the Machine và Restroom Icon Matching. Ba tác vụ ban đầu: DeepWeeds (phân loại ảnh 9 lớp), Vietnamese Spam Review Detection (4 nhãn `0`–`3`) và ViLexNorm (chuẩn hóa từ vựng tiếng Việt). Hai bài phân loại có Public/Private Test và dùng Macro-F1; ViLexNorm có một Test Set và dùng Error Reduction Rate (ERR).
 
 ## 1. Cài đặt
 
@@ -199,3 +199,52 @@ SITE_URL=http://localhost:8000/ GRADER_PASSWORD='mật-khẩu' node scripts/test
 
 Smoke test này dùng **bản build tĩnh mã hóa**, xác nhận điểm 100 trên A/B cho JSONL/CSV/ZIP,
 đảo dòng, từ chối ID thiếu, hiển thị bảng xếp hạng và điền sẵn form GitHub.
+
+## 8. Restroom Icon Matching (IOAI 2025)
+
+Ghép mỗi biểu tượng query đã cắt với **biểu tượng khác giới tính của cùng nhà vệ sinh** trong gallery.
+Nguồn: [dataset Kaggle](https://www.kaggle.com/datasets/hittungtran/restroom-ioai-2025),
+[notebook đề/baseline IOAI](https://github.com/IOAI-official/IOAI-2025/blob/main/Individual-Contest/Restroom/Restroom.ipynb),
+[mã chấm gốc](https://github.com/IOAI-official/IOAI-2025/blob/main/Individual-Contest/Restroom/Solution/Scoring/metrics.py).
+448 ảnh trong bản Kaggle đã được đối chiếu Git blob hash và khớp dữ liệu repo IOAI.
+
+- Train: 82 nhà vệ sinh × 4 ảnh (`crop/orig` × `male/female`) = 328 ảnh.
+- **Public/A**: `Solution/validation_set`, 10 query và 20 gallery.
+- **Private/B**: `Solution/test_set`, 30 query và 60 gallery; dùng xếp hạng cuối.
+- File gốc: `submission_a.npy` hoặc `submission_b.npy`, mảng **một chiều** `(10,)` hoặc `(30,)`.
+  Phần tử thứ `i-1` ứng với `query/i.png`, theo thứ tự **số** 1, 2, …, 10, không phải 1, 10, 2.
+  Giá trị là gallery ID bắt đầu từ 1: A trong 1–20, B trong 1–60.
+- Chấp nhận NPY số nguyên và float có giá trị nguyên, vì reference solution dùng mảng float.
+  Từ chối bool, object/pickle, NaN/Inf, số lẻ, sai shape, sai số query và ID ngoài phạm vi.
+- ZIP có thể chứa **cả hai NPY** đúng tên như notebook gốc; chỉ file của tập đang chọn được chấm.
+  Hoặc dùng CSV `query_id,gallery_id`; CSV căn theo query ID nên có thể đảo dòng.
+- **Precision@1 = số ghép đúng / số query**, điểm gốc **0–1** theo `metrics.py`.
+  Không nhân 100 hay áp dụng score unification của IOAI. Sai match được 0 cho query đó;
+  dự đoán cùng một gallery cho nhiều query vẫn là bài hợp lệ như scorer gốc.
+- Xếp hạng theo Private/B tốt nhất, rồi Public/A, rồi thời điểm đạt điểm như các bài trước.
+
+Website chỉ chấm **file dự đoán đã xuất**, không chạy `submission.ipynb`, model hay kiểm tra thời gian chạy.
+Có file mẫu (dự đoán minh họa, không phải đáp án) tại `site/restroom/` và link tải dữ liệu trên trang.
+Dữ liệu ảnh giữ ở nguồn Kaggle/IOAI, không chép thêm 44 MB ảnh vào repo grader.
+Bản Kaggle khai báo CC BY-NC-SA 4.0 và chỉ có ảnh, không có đáp án A/B.
+
+Đáp án dùng hai file chính thức `answer_a.npy`, `answer_b.npy` (phiên bản ghim
+`39558e9a639d170bd92de91958fcdc915f670463`), nằm trong gói mã hóa cùng các bài cũ.
+Chuẩn bị local khi cần (không tải model hay ảnh):
+
+```bash
+python3 scripts/prepare_restroom.py --data-root /đường/dẫn/dữ-liệu
+GRADER_DATA_ROOT=/đường/dẫn/dữ-liệu python3 server.py --port 8000
+```
+
+Tập tin sẽ ở `Restroom/Solution/Scoring/` bên dưới data root. Sau đó có thể dùng
+`scripts/pack_ground_truth.sh` để cập nhật bundle, với cùng data root chứa đáp án các bài khác.
+
+Kiểm tra giao diện trên bản build tĩnh mã hóa bằng Chromium (Playwright):
+
+```bash
+SITE_URL=http://localhost:8000/ GRADER_PASSWORD='mật-khẩu' node scripts/test_restroom_pages.cjs
+```
+
+Smoke test xác nhận NPY integer/float, ZIP A/B, CSV đảo dòng, kiểm tra lỗi,
+form GitHub được điền sẵn, bảng xếp hạng và bố cục mobile.

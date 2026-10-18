@@ -37,6 +37,12 @@ class TaskConfig:
 
 
 TASKS: dict[str, TaskConfig] = {
+    "restroom": TaskConfig(
+        key="restroom", display_name="Computer Vision — Restroom Icon Matching",
+        short_name="Restroom Icon Matching", id_col="query_id", label_col="gallery_id",
+        organizer_dir=ROOT / "Restroom" / "Solution" / "Scoring",
+        metric_kind="image_matching",
+    ),
     "ghost": TaskConfig(
         key="ghost", display_name="NLP — Ghost of the Machine",
         short_name="Ghost of the Machine", id_col="id", label_col="boundary_char_index",
@@ -92,6 +98,9 @@ def get_task_config(task: str) -> TaskConfig:
 def load_ground_truth(task: str, split: str) -> pd.DataFrame:
     """Load an organizer ground truth file without exposing it to the UI."""
     config = get_task_config(task)
+    if config.metric_kind == "image_matching":
+        from restroom_scoring import load_truth
+        return load_truth(config.organizer_dir, split)
     if config.metric_kind == "boundary_detection":
         from ghost_scoring import load_truth
         return load_truth(config.organizer_dir, split)
@@ -165,10 +174,16 @@ def _read_jsonl_bytes(data: bytes, source_name: str) -> pd.DataFrame:
         raise SubmissionReadError(f"Không đọc được {source_name}: {exc}") from exc
 
 
-def read_submission(uploaded_file: BinaryIO) -> tuple[pd.DataFrame, str]:
+def read_submission(uploaded_file: BinaryIO, *, task: str | None = None, split: str | None = None) -> tuple[pd.DataFrame, str]:
     """Read CSV/JSONL or one recognized prediction file inside an in-memory ZIP."""
     upload_name, data = _uploaded_bytes(uploaded_file)
     suffix = Path(upload_name).suffix.lower()
+    if task == "restroom":
+        from restroom_scoring import read_prediction
+        try:
+            return read_prediction(data, upload_name, split, _read_csv_bytes)
+        except (ValueError, OSError, RuntimeError, BadZipFile) as exc:
+            raise SubmissionReadError(str(exc)) from exc
 
     if suffix == ".csv":
         return _read_csv_bytes(data, upload_name or "submission.csv"), upload_name
@@ -459,9 +474,33 @@ def score_vilexnorm_submission(
     }
 
 
+def score_restroom_submission(submission_df: pd.DataFrame, truth: pd.DataFrame, split: str) -> dict[str, Any]:
+    from restroom_scoring import split_config
+    import re
+    validation = validate_submission(submission_df, truth, "query_id", "gallery_id",
+                                     validate_label_domain=False, reject_extra_columns=True)
+    result = {**validation, "score": None, "metric_name": "Precision@1", "secondary_metrics": None,
+              "classwise": None, "confusion_matrix": None}
+    if not validation["valid"]:
+        return result
+    maximum = split_config(split)["gallery"]
+    lookup = dict(zip(submission_df["query_id"].astype(str), submission_df["gallery_id"].astype(str)))
+    values = [lookup[sample_id] for sample_id in truth.query_id]
+    if any(not re.fullmatch(r"[0-9]{1,2}", value) or not 1 <= int(value) <= maximum for value in values):
+        result["valid"] = False
+        result["stats"]["valid_samples"] = 0
+        result["errors"].append(f"Gallery ID phải là số nguyên từ 1 đến {maximum}.")
+        return result
+    correct = sum(int(value) == int(target) for value, target in zip(values, truth.gallery_id))
+    result.update(score=correct / len(truth), secondary_metrics={"Correct Matches": correct, "Total Queries": len(truth)})
+    return result
+
+
 def grade_submission(task: str, split: str, submission_df: pd.DataFrame) -> dict[str, Any]:
     config = get_task_config(task)
     ground_truth = load_ground_truth(task, split)
+    if config.metric_kind == "image_matching":
+        return score_restroom_submission(submission_df, ground_truth, split)
     if config.metric_kind == "boundary_detection":
         from ghost_scoring import score
         return score(submission_df, ground_truth)

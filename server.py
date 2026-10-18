@@ -111,7 +111,7 @@ async def submit(request: Request) -> JSONResponse:
     if split not in task_splits(task):
         return error("Tập đánh giá không hợp lệ.")
     if upload is None or not getattr(upload, "filename", ""):
-        return error("Vui lòng chọn file .csv, .jsonl hoặc .zip.")
+        return error("Vui lòng chọn file .csv, .jsonl, .npy hoặc .zip.")
 
     data = await upload.read()
     if len(data) > MAX_UPLOAD_BYTES:
@@ -127,7 +127,7 @@ async def submit(request: Request) -> JSONResponse:
 
     result, read_error = None, None
     try:
-        frame, _ = read_submission(NamedBytesIO(data, upload.filename))
+        frame, _ = read_submission(NamedBytesIO(data, upload.filename), task=task, split=split)
         # Grading is CPU-bound; run it off the event loop.
         result = await run_in_threadpool(grade_submission, task, split, frame)
     except SubmissionReadError as exc:

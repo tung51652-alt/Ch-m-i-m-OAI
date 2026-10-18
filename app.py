@@ -62,6 +62,7 @@ task_labels = {
     "Tác vụ 2 — NLP: Vietnamese Spam Review Detection": "nlp",
     "Tác vụ 3 — NLP: ViLexNorm": "vilexnorm",
     "Tác vụ 4 — NLP: Ghost of the Machine": "ghost",
+    "Tác vụ 5 — Computer Vision: Restroom Icon Matching": "restroom",
 }
 split_labels = {"Public Test": "public", "Private Test": "private"}
 
@@ -146,12 +147,17 @@ with tab_grade:
             split = split_labels[selected_split_label]
         uploaded_file = st.file_uploader(
             "Upload submission",
-            type=["csv", "zip", "jsonl"] if selected_task == "ghost" else ["csv", "zip"],
-            help="Ghost: answers.jsonl hoặc CSV id,boundary_char_index; ZIP chứa đúng một file dự đoán." if selected_task == "ghost" else "CSV trực tiếp hoặc ZIP chứa đúng một file submission.csv/output.csv",
+            type=["npy", "csv", "zip"] if selected_task == "restroom" else ["csv", "zip", "jsonl"] if selected_task == "ghost" else ["csv", "zip"],
+            help="Restroom: submission_a.npy (Public/A), submission_b.npy (Private/B), ZIP cả hai hoặc CSV query_id,gallery_id." if selected_task == "restroom" else "Ghost: answers.jsonl hoặc CSV id,boundary_char_index; ZIP chứa đúng một file dự đoán." if selected_task == "ghost" else "CSV trực tiếp hoặc ZIP chứa đúng một file submission.csv/output.csv",
         )
         if uploaded_file is not None:
             st.caption(f"Đã chọn: `{uploaded_file.name}`")
         grade_clicked = st.button("CHẤM ĐIỂM", type="primary", width="stretch")
+
+    if selected_task == "restroom":
+        st.info("Ghép query đã cắt với biểu tượng khác giới tính cùng nhà vệ sinh. Public/A: 10 query, 20 gallery; Private/B: 30 query, 60 gallery.")
+        st.latex(r"Precision@1 = \frac{\text{Số query ghép đúng}}{\text{Tổng số query}}")
+        st.caption("NPY một chiều, thứ tự query 1.png, 2.png, …; giá trị là gallery ID bắt đầu từ 1. Nhận cả float nguyên như output reference. Chấm file dự đoán, không chạy notebook. Điểm 0–1, không nhân 100.")
 
     if selected_task == "ghost":
         st.info("Tìm vị trí ký tự chuyển từ người viết sang máy sinh. Public = Leaderboard A; Private = Leaderboard B (xếp hạng cuối), 380 mẫu mỗi tập.")
@@ -163,12 +169,12 @@ with tab_grade:
         if not team_name:
             st.error("Vui lòng nhập tên đội trước khi chấm.")
         elif uploaded_file is None:
-            st.error("Vui lòng upload một file .csv, .jsonl hoặc .zip trước khi chấm.")
+            st.error("Vui lòng upload một file .csv, .jsonl, .npy hoặc .zip trước khi chấm.")
         else:
             task = selected_task
             config = get_task_config(task)
             try:
-                submission_df, internal_name = read_submission(uploaded_file)
+                submission_df, internal_name = read_submission(uploaded_file, task=task, split=split)
                 result = grade_submission(task, split, submission_df)
                 saved = save_local_submission(team_name, task, split, uploaded_file, result)
 
@@ -208,12 +214,12 @@ with tab_grade:
                         st.info(f"Đội **{team_name}** chưa được xếp hạng: cần một bài hợp lệ trên {SPLIT_DISPLAY[rank_split]}.")
                     st.caption(f"Đã lưu vào lịch sử (`{saved['id']}`).")
 
-                    if task in {"vilexnorm", "ghost"}:
+                    if task in {"vilexnorm", "ghost", "restroom"}:
                         st.subheader("Metrics phụ")
                         secondary = result["secondary_metrics"]
                         columns = st.columns(3)
                         for column, (name, value) in zip(columns, secondary.items()):
-                            column.metric(name, f"{value:.6f}")
+                            column.metric(name, f"{int(value):,}" if task == "restroom" else f"{value:.6f}")
                         st.caption("Metrics phụ dùng để phân tích, không dùng để xếp hạng. Ground truth không được hiển thị.")
                     else:
                         st.subheader("F1 theo lớp")

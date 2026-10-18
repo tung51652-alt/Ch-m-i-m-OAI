@@ -28,7 +28,7 @@ LOCAL_TZ = timezone(timedelta(hours=7))
 # Tasks open for submission and shown on the leaderboard.
 ACTIVE_TASKS = [
     task.strip()
-    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp,vilexnorm,ghost").split(",")
+    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp,vilexnorm,ghost,restroom").split(",")
     if task.strip() in TASKS
 ]
 
@@ -238,6 +238,10 @@ def task_requirements(task: str) -> dict[str, Any]:
     Fields stay None when the ground truth is not available (e.g. a CI build without data).
     """
     config = get_task_config(task)
+    if config.metric_kind == "image_matching":
+        return {"columns": ["query_id", "gallery_id"], "rows": {"public": 10, "private": 30},
+                "gallery_counts": {"public": 20, "private": 60}, "labels": None,
+                "example": [["1", "1"], ["2", "2"], ["3", "3"]]}
     rows: dict[str, int] = {}
     labels: set[str] = set()
     example_ids: list[str] = []
@@ -291,7 +295,7 @@ def export_site_data(
             {
                 "key": key,
                 "name": config.display_name,
-                "metric": "Boundary Score" if config.metric_kind == "boundary_detection" else "Error Reduction Rate (ERR)" if config.metric_kind == "lexical_normalization" else "Macro F1",
+                "metric": {"image_matching": "Precision@1", "boundary_detection": "Boundary Score", "lexical_normalization": "Error Reduction Rate (ERR)"}.get(config.metric_kind, "Macro F1"),
                 "metric_kind": config.metric_kind,
                 "splits": task_splits(key),
                 "ranking_split": ranking_split(key),
