@@ -357,7 +357,7 @@ class RequirementsTests(unittest.TestCase):
         self.assertEqual(team_names(Path("/nonexistent.json")), [])
 
     def test_all_supported_tasks_are_active(self) -> None:
-        self.assertEqual(ACTIVE_TASKS, ["cv", "nlp", "vilexnorm", "ghost", "restroom"])
+        self.assertEqual(ACTIVE_TASKS, ["cv", "nlp", "vilexnorm", "ghost", "restroom", "math_ocr", "vietnamese_restoration"])
 
     @unittest.skipUnless(
         scoring.TASKS["vilexnorm"].test_input_path and scoring.TASKS["vilexnorm"].test_input_path.is_file(),

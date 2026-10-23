@@ -248,9 +248,10 @@
   </section>
 </main>
 
-<script src="grader.js"></script>
+<script src="grader.js?v=sequence-20261023"></script>
 <script src="ghost-grader.js"></script>
 <script src="restroom-grader.js"></script>
+<script src="sequence-grader.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -267,6 +268,8 @@
     vilexnorm: "Tác vụ 3 — NLP: ViLexNorm",
     ghost: "Tác vụ 4 — NLP: Ghost of the Machine",
     restroom: "Tác vụ 5 — Computer Vision: Restroom Icon Matching",
+    math_ocr: "Tác vụ 6 — OCR: Mathematical Expression Recognition",
+    vietnamese_restoration: "Tác vụ 7 — NLP: Vietnamese Noisy Text Restoration",
   };
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(6));
   const num = (n) => Number(n).toLocaleString("vi-VN");
@@ -394,6 +397,31 @@
     const [idCol, labelCol] = req.columns || ["id", "label"];
     const mode = MAX_UPLOAD_MB[data.submit_mode] ? data.submit_mode : "issue";
     const row = (label, ...cells) => el("tr", {}, el("th", { scope: "row" }, label), el("td", {}, ...cells));
+
+    if (["latex_recognition", "text_restoration"].includes(task.metric_kind)) {
+      const math = task.key === "math_ocr";
+      const folder = math ? "math_ocr" : "vietnamese_restoration";
+      const filename = math ? "math-ocr-oai.zip" : "vietnamese-text-restoration-oai.zip";
+      $("req-card").replaceChildren(
+        el("div", { class: "panel-head" }, el("h2", {}, task.name)),
+        el("table", { class: "spec" }, el("tbody", {},
+          row("Bài toán", math ? "Ảnh biểu thức toán viết tay → LaTeX; nhận diện cấu trúc 2D." : "Văn bản tiếng Việt nhiễu → văn bản phục hồi chính xác."),
+          row("Submission", "CSV UTF-8 đúng hai cột id,text; thứ tự dòng tùy ý."),
+          row("Số mẫu", `${num(req.rows[split])} · ${data.split_names[split]}`),
+          row("Kiểm tra", "Từ chối ID thiếu/trùng/thừa, sai schema và prediction rỗng."))),
+        el("div", { class: "foot" },
+          el("div", {}, el("a", {href: `https://github.com/tung51652-alt/Ch-m-i-m-OAI/releases/download/oai-sequence-v1/${filename}`}, "Tải bộ dữ liệu đầy đủ (ZIP)")),
+          el("div", {}, el("a", {href: `${folder}/README.md`}, "Đề bài và giấy phép"), " · ",
+            el("a", {href: `${folder}/sample_submission_${split}.csv`, download: "submission.csv"}, "Tải submission mẫu"))));
+      $("metric-card").replaceChildren(
+        el("div", { class: "panel-head" }, el("h2", {}, task.metric)),
+        el("div", { class: "panel-body" },
+          el("p", {}, math ? "Score = 100 × mean(1 − TokenEditDistance / max(tokens dự đoán, tokens nhãn, 1))." : "Score = 100 × (1 − mean(min(1, CER))). CER = edit distance / độ dài nhãn."),
+          el("p", {}, math ? "NFC, trim hai đầu; giữ whitespace nội bộ. Token gồm lệnh LaTeX, escape và từng ký tự khác. Không chấm tương đương đại số." : "NFC; gộp whitespace thành một dấu cách và trim. Giữ dấu, hoa/thường, dấu câu. WER tính trên toàn corpus."),
+          el("p", {}, "Thang 0–100, càng cao càng tốt. Metric phụ: Exact Match (%)" + (math ? "." : " và WER.")),
+          el("p", {}, "Public/private = 40%/60%. Xếp hạng cuối theo private. Chấm file dự đoán, không chạy notebook.")));
+      return;
+    }
 
     if (task.metric_kind === "image_matching") {
       const letter = split === "private" ? "b" : "a";
@@ -698,7 +726,7 @@
     const [idCol, labelCol] = task.requirements.columns;
     let sub;
     try {
-      sub = task.metric_kind === "image_matching" ? await OAIRestroomGrader.readSubmission(file, split) : await OAIGrader.readSubmission(file);
+      sub = task.metric_kind === "image_matching" ? await OAIRestroomGrader.readSubmission(file, split) : await OAIGrader.readSubmission(file, ["latex_recognition", "text_restoration"].includes(task.metric_kind) ? { preserveStrings: true, strictFields: true } : {});
     } catch (e) {
       if (e instanceof OAIGrader.SubmissionReadError) {
         return resultBox({ submission: { team, task: taskKey, split, valid: false, score: null, metric_name: task.metric,
@@ -706,7 +734,9 @@
       }
       throw e;
     }
-    const result = task.metric_kind === "image_matching"
+    const result = ["latex_recognition", "text_restoration"].includes(task.metric_kind)
+      ? OAISequenceGrader.grade(sub, truth, task.metric_kind)
+      : task.metric_kind === "image_matching"
       ? OAIRestroomGrader.grade(sub, truth, split)
       : task.metric_kind === "boundary_detection"
       ? OAIGhostGrader.grade(sub, truth)
@@ -723,7 +753,7 @@
     }
     const box = resultBox({ submission, standing });
     if (result.valid) {
-      if (["lexical_normalization", "boundary_detection", "image_matching"].includes(task.metric_kind)) {
+      if (["lexical_normalization", "boundary_detection", "image_matching", "latex_recognition", "text_restoration"].includes(task.metric_kind)) {
         box.append(el("div", { class: "save-box" },
           el("div", {}, "Điểm và hạng ở trên là dự kiến và chưa được lưu. ",
             `Hãy mở form, chọn ${task.name} / ${data.split_names[split]}, đính kèm chính file vừa chấm rồi bấm Submit.`,

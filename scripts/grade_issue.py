@@ -59,6 +59,8 @@ TASK_OPTIONS = {
     "Tác vụ 3 — NLP: ViLexNorm": "vilexnorm",
     "Tác vụ 4 — NLP: Ghost of the Machine": "ghost",
     "Tác vụ 5 — Computer Vision: Restroom Icon Matching": "restroom",
+    "Tác vụ 6 — OCR: Mathematical Expression Recognition": "math_ocr",
+    "Tác vụ 7 — NLP: Vietnamese Noisy Text Restoration": "vietnamese_restoration",
 }
 SPLIT_OPTIONS = {
     "Public Test": "public",

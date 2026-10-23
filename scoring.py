@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import importlib.util
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 import os
 from pathlib import Path, PurePosixPath
 import sys
@@ -37,6 +38,18 @@ class TaskConfig:
 
 
 TASKS: dict[str, TaskConfig] = {
+    "math_ocr": TaskConfig(
+        key="math_ocr", display_name="OCR — Mathematical Expression Recognition",
+        short_name="Handwritten Math Recognition", id_col="id", label_col="text",
+        organizer_dir=ROOT / "nlp" / "_organizer_private" / "math_ocr",
+        metric_kind="latex_recognition",
+    ),
+    "vietnamese_restoration": TaskConfig(
+        key="vietnamese_restoration", display_name="NLP — Vietnamese Noisy Text Restoration",
+        short_name="Vietnamese Text Restoration", id_col="id", label_col="text",
+        organizer_dir=ROOT / "nlp" / "_organizer_private" / "vietnamese_restoration",
+        metric_kind="text_restoration",
+    ),
     "restroom": TaskConfig(
         key="restroom", display_name="Computer Vision — Restroom Icon Matching",
         short_name="Restroom Icon Matching", id_col="query_id", label_col="gallery_id",
@@ -98,6 +111,13 @@ def get_task_config(task: str) -> TaskConfig:
 def load_ground_truth(task: str, split: str) -> pd.DataFrame:
     """Load an organizer ground truth file without exposing it to the UI."""
     config = get_task_config(task)
+    if config.metric_kind in {"latex_recognition", "text_restoration"}:
+        if split not in {"public", "private"}:
+            raise ValueError("Chỉ hỗ trợ public/private.")
+        frame = _read_csv_bytes((config.organizer_dir / f"{split}_answers.csv").read_bytes(), "answers.csv", preserve_strings=True)
+        if list(frame.columns) != ["id", "text"] or frame.empty or frame.id.duplicated().any() or any(not v.strip() for v in frame.id) or any(not v.strip() for v in frame.text):
+            raise RuntimeError("Đáp án sequence có schema, ID hoặc nhãn không hợp lệ.")
+        return frame
     if config.metric_kind == "image_matching":
         from restroom_scoring import load_truth
         return load_truth(config.organizer_dir, split)
@@ -151,9 +171,13 @@ def _uploaded_bytes(uploaded_file: Any) -> tuple[str, bytes]:
     return name, bytes(data)
 
 
-def _read_csv_bytes(data: bytes, source_name: str) -> pd.DataFrame:
+def _read_csv_bytes(data: bytes, source_name: str, *, preserve_strings: bool = False) -> pd.DataFrame:
     try:
-        return pd.read_csv(BytesIO(data), encoding="utf-8-sig", dtype=str)
+        rows = csv.reader(StringIO(data.decode("utf-8-sig")), strict=True)
+        header = next(rows)
+        if any(len(row) != len(header) for row in rows):
+            raise SubmissionReadError("CSV có dòng sai số trường.")
+        return pd.read_csv(BytesIO(data), encoding="utf-8-sig", dtype=str, keep_default_na=not preserve_strings)
     except UnicodeDecodeError as exc:
         raise SubmissionReadError(
             f"Không đọc được {source_name}: CSV phải dùng encoding UTF-8."
@@ -185,8 +209,9 @@ def read_submission(uploaded_file: BinaryIO, *, task: str | None = None, split: 
         except (ValueError, OSError, RuntimeError, BadZipFile) as exc:
             raise SubmissionReadError(str(exc)) from exc
 
+    csv_reader = lambda data, name: _read_csv_bytes(data, name, preserve_strings=task in {"math_ocr", "vietnamese_restoration"})
     if suffix == ".csv":
-        return _read_csv_bytes(data, upload_name or "submission.csv"), upload_name
+        return csv_reader(data, upload_name or "submission.csv"), upload_name
 
     if suffix == ".jsonl":
         return _read_jsonl_bytes(data, upload_name), upload_name
@@ -211,7 +236,7 @@ def read_submission(uploaded_file: BinaryIO, *, task: str | None = None, split: 
                 csv_data = archive.read(member)
             except RuntimeError as exc:
                 raise SubmissionReadError("Không đọc được output.csv trong ZIP; file có thể đã được mã hóa.") from exc
-            reader = _read_jsonl_bytes if member.filename.lower().endswith(".jsonl") else _read_csv_bytes
+            reader = _read_jsonl_bytes if member.filename.lower().endswith(".jsonl") else csv_reader
             return reader(csv_data, member.filename), member.filename
     except SubmissionReadError:
         raise
@@ -499,6 +524,9 @@ def score_restroom_submission(submission_df: pd.DataFrame, truth: pd.DataFrame, 
 def grade_submission(task: str, split: str, submission_df: pd.DataFrame) -> dict[str, Any]:
     config = get_task_config(task)
     ground_truth = load_ground_truth(task, split)
+    if config.metric_kind in {"latex_recognition", "text_restoration"}:
+        from sequence_scoring import score
+        return score(submission_df, ground_truth, config.metric_kind)
     if config.metric_kind == "image_matching":
         return score_restroom_submission(submission_df, ground_truth, split)
     if config.metric_kind == "boundary_detection":

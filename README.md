@@ -248,3 +248,42 @@ SITE_URL=http://localhost:8000/ GRADER_PASSWORD='mật-khẩu' node scripts/test
 
 Smoke test xác nhận NPY integer/float, ZIP A/B, CSV đảo dòng, kiểm tra lỗi,
 form GitHub được điền sẵn, bảng xếp hạng và bố cục mobile.
+
+## Mathematical Expression Recognition và Vietnamese Noisy Text Restoration
+
+Hai bài mới nằm trong menu chấm điểm, dùng hai split **Public Test / Private Test**;
+điểm 0–100, xếp hạng cuối theo private. Cả hai nhận CSV UTF-8 đúng hai cột
+`id,text` hoặc ZIP chứa đúng một `submission.csv` / `output.csv`. Hệ thống từ chối
+ID thiếu, trùng, thừa và prediction rỗng; giữ literal `NA`, `null` như văn bản.
+
+| Bài | Train | Validation | Public | Private | Metric chính |
+|---|---:|---:|---:|---:|---|
+| Mathematical Expression Recognition | 25.000 | 2.000 | 800 | 1.200 | Normalized LaTeX Token Edit Similarity |
+| Vietnamese Noisy Text Restoration | 40.000 | 2.000 | 838 | 1.257 | 100 × (1 − mean(clipped CER)) |
+
+Đề bài, quy tắc chuẩn hóa, trích dẫn và giấy phép đầy đủ ở
+[OCR](site/math_ocr/README.md) và [phục hồi tiếng Việt](site/vietnamese_restoration/README.md).
+File mẫu của mỗi split có sẵn trên giao diện. Bộ dữ liệu đầy đủ được phân phối
+qua [GitHub Release oai-sequence-v1](https://github.com/tung51652-alt/Ch-m-i-m-OAI/releases/tag/oai-sequence-v1),
+không đưa ZIP ảnh lớn vào lịch sử Git. OCR dùng CC BY-NC-SA 4.0; NLP dùng CC BY-SA 4.0.
+
+Đáp án được đọc từ `GRADER_DATA_ROOT/nlp/_organizer_private/{math_ocr,vietnamese_restoration}`,
+mỗi thư mục có `public_answers.csv` và `private_answers.csv` (header `id,text`).
+Chỉ bản mã hóa được commit trong `secure/ground_truth.tar.gz.enc`; không commit
+CSV đáp án hay khóa. Workflow dùng secret `GRADER_DATA_KEY` hiện có để giải mã.
+GitHub Pages tiếp tục dùng cơ chế mã hóa bằng `GRADER_PASSWORD` như các bài cũ:
+người biết mật khẩu có thể đọc dữ liệu sau khi trình duyệt giải mã. Cơ chế này phục
+vụ luyện tập, không bảo đảm bí mật đáp án đối với người đã đăng nhập.
+
+Phần Ba Na không được tích hợp trong web này.
+
+Kiểm tra metric Python/JavaScript và các bài cũ:
+
+```bash
+python -m unittest discover -v -p 'test_*.py'
+node --test test_grader.js test_ghost_browser.js test_restroom_browser.js test_sequence_browser.js
+```
+
+Workflow Pages kiểm tra trên Chromium sau khi deploy: điểm 100 cho file chuẩn
+CSV/ZIP, ID đảo thứ tự, từ chối ID thiếu, chấp nhận submission mẫu, chọn đúng form
+lưu điểm cho cả hai bài và cả hai split. Không ghi đáp án hoặc mật khẩu vào log.

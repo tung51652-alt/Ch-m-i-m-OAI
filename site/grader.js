@@ -20,7 +20,7 @@
   const sortStr = (arr) => [...arr].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
   // ---------- CSV (RFC 4180, like pandas' C parser for well-formed files) ----------
-  function parseCsv(text, sourceName) {
+  function parseCsv(text, sourceName, options = {}) {
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);  // utf-8-sig
     const rows = [];
     let row = [], field = "", quoted = false, i = 0, fieldQuoted = false;
@@ -54,7 +54,7 @@
     const records = [];
     for (let r = 1; r < rows.length; r += 1) {
       const cells = rows[r];
-      if (cells.length > header.length) {
+      if (cells.length > header.length || (options.strictFields && cells.length !== header.length)) {
         throw new SubmissionReadError(`CSV ${sourceName} sai cấu trúc: Error tokenizing data. C error: ` +
           `Expected ${header.length} fields in line ${r + 1}, saw ${cells.length}.`);
       }
@@ -62,7 +62,7 @@
       header.forEach((name, k) => {
         const cell = cells[k];
         // Missing trailing cells and NA strings become NaN (null); quoted empty strings too, as in pandas.
-        rec[name] = !cell || NA_VALUES.has(cell.value) ? null : cell.value;
+        rec[name] = options.preserveStrings ? (cell ? cell.value : "") : (!cell || NA_VALUES.has(cell.value) ? null : cell.value);
       });
       records.push(rec);
     }
@@ -109,13 +109,13 @@
   }
 
   /** Read an uploaded File into {columns, rows, internalName}, like scoring.read_submission. */
-  async function readSubmission(file) {
+  async function readSubmission(file, options = {}) {
     const name = file.name || "";
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!bytes.length) throw new SubmissionReadError("File upload đang rỗng.");
     const lower = name.toLowerCase();
     if (lower.endsWith(".csv")) {
-      return { ...parseCsv(decodeUtf8(bytes, name || "submission.csv"), name || "submission.csv"), internalName: name };
+      return { ...parseCsv(decodeUtf8(bytes, name || "submission.csv"), name || "submission.csv", options), internalName: name };
     }
     if (lower.endsWith(".jsonl")) return { ...parseJsonl(decodeUtf8(bytes, name)), internalName: name };
     if (!lower.endsWith(".zip")) throw new SubmissionReadError("Chỉ hỗ trợ file .csv, .jsonl hoặc .zip.");
@@ -138,7 +138,7 @@
       throw new SubmissionReadError("Không đọc được output.csv trong ZIP; file có thể đã được mã hóa.");
     }
     const text = decodeUtf8(inner, matches[0].name);
-    const parsed = matches[0].name.toLowerCase().endsWith(".jsonl") ? parseJsonl(text) : parseCsv(text, matches[0].name);
+    const parsed = matches[0].name.toLowerCase().endsWith(".jsonl") ? parseJsonl(text) : parseCsv(text, matches[0].name, options);
     return { ...parsed, internalName: matches[0].name };
   }
 

@@ -28,7 +28,7 @@ LOCAL_TZ = timezone(timedelta(hours=7))
 # Tasks open for submission and shown on the leaderboard.
 ACTIVE_TASKS = [
     task.strip()
-    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp,vilexnorm,ghost,restroom").split(",")
+    for task in (os.environ.get("GRADER_TASKS") or "cv,nlp,vilexnorm,ghost,restroom,math_ocr,vietnamese_restoration").split(",")
     if task.strip() in TASKS
 ]
 
@@ -238,6 +238,11 @@ def task_requirements(task: str) -> dict[str, Any]:
     Fields stay None when the ground truth is not available (e.g. a CI build without data).
     """
     config = get_task_config(task)
+    if config.metric_kind in {"latex_recognition", "text_restoration"}:
+        counts = {"math_ocr": {"public": 800, "private": 1200},
+                  "vietnamese_restoration": {"public": 838, "private": 1257}}[task]
+        return {"columns": ["id", "text"], "rows": counts, "labels": None,
+                "example": [["public_test_000001", "x" if task == "math_ocr" else "Văn bản phục hồi."]]}
     if config.metric_kind == "image_matching":
         return {"columns": ["query_id", "gallery_id"], "rows": {"public": 10, "private": 30},
                 "gallery_counts": {"public": 20, "private": 60}, "labels": None,
@@ -295,7 +300,7 @@ def export_site_data(
             {
                 "key": key,
                 "name": config.display_name,
-                "metric": {"image_matching": "Precision@1", "boundary_detection": "Boundary Score", "lexical_normalization": "Error Reduction Rate (ERR)"}.get(config.metric_kind, "Macro F1"),
+                "metric": {"latex_recognition": "Normalized LaTeX Token Edit Similarity", "text_restoration": "Clipped CER Similarity", "image_matching": "Precision@1", "boundary_detection": "Boundary Score", "lexical_normalization": "Error Reduction Rate (ERR)"}.get(config.metric_kind, "Macro F1"),
                 "metric_kind": config.metric_kind,
                 "splits": task_splits(key),
                 "ranking_split": ranking_split(key),

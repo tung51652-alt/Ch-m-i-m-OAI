@@ -13,6 +13,7 @@ body:
         Ghost: Public = Leaderboard A; Private = Leaderboard B (380 mẫu/tập). Nộp `answers.jsonl` hoặc CSV `id,boundary_char_index`.
         Ghost dùng Boundary Score 0–100; chỉ số là số nguyên trong [0, len(text)]. ZIP Ghost chứa đúng một `answers.jsonl` hoặc CSV.
         Restroom: Public/A nộp `submission_a.npy` (10 query), Private/B nộp `submission_b.npy` (30 query); hoặc ZIP chứa cả hai, hệ thống lấy file theo tập đã chọn. Có thể dùng CSV `query_id,gallery_id`.
+        Mathematical Expression Recognition và Vietnamese Noisy Text Restoration: CSV `id,text`; điểm 0–100, public/private riêng. ZIP chứa đúng một submission.csv hoặc output.csv.
         Gallery ID bắt đầu từ 1; Restroom chấm Precision@1 từ 0 đến 1.
         File ZIP cho các bài cũ phải chứa đúng một file `submission.csv` hoặc `output.csv`.
   - type: dropdown
@@ -35,6 +36,8 @@ body:
         - "Tác vụ 3 — NLP: ViLexNorm"
         - "Tác vụ 4 — NLP: Ghost of the Machine"
         - "Tác vụ 5 — Computer Vision: Restroom Icon Matching"
+        - "Tác vụ 6 — OCR: Mathematical Expression Recognition"
+        - "Tác vụ 7 — NLP: Vietnamese Noisy Text Restoration"
     validations:
       required: true
   - type: dropdown

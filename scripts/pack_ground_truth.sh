@@ -21,6 +21,10 @@ fi
 export GRADER_DATA_KEY
 
 FILES=(
+  nlp/_organizer_private/math_ocr/public_answers.csv
+  nlp/_organizer_private/math_ocr/private_answers.csv
+  nlp/_organizer_private/vietnamese_restoration/public_answers.csv
+  nlp/_organizer_private/vietnamese_restoration/private_answers.csv
   Restroom/Solution/Scoring/answer_a.npy
   Restroom/Solution/Scoring/answer_b.npy
   Tac_vu_1_CV/organizer/public_ground_truth.csv

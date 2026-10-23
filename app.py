@@ -63,6 +63,8 @@ task_labels = {
     "Tác vụ 3 — NLP: ViLexNorm": "vilexnorm",
     "Tác vụ 4 — NLP: Ghost of the Machine": "ghost",
     "Tác vụ 5 — Computer Vision: Restroom Icon Matching": "restroom",
+    "Tác vụ 6 — OCR: Mathematical Expression Recognition": "math_ocr",
+    "Tác vụ 7 — NLP: Vietnamese Noisy Text Restoration": "vietnamese_restoration",
 }
 split_labels = {"Public Test": "public", "Private Test": "private"}
 
@@ -165,6 +167,10 @@ with tab_grade:
         st.latex(r"Score = \frac{100}{N}\sum_{i=1}^{N}\exp(-|p_i-t_i|/100)")
         st.caption("Boundary là số nguyên từ 0 đến len(text), tính theo ký tự Unicode như Python. Điểm 0–100; càng cao càng tốt. Nộp output của notebook, không nộp notebook.")
 
+    if selected_task in {"math_ocr", "vietnamese_restoration"}:
+        st.info("Nộp CSV UTF-8 đúng header id,text. Public/private: 40%/60%; điểm 0–100, xếp hạng theo private.")
+        st.caption("OCR: token LaTeX edit similarity. Phục hồi tiếng Việt: 100 × (1 − mean(clipped CER)); metric phụ Exact Match và WER.")
+
     if grade_clicked:
         if not team_name:
             st.error("Vui lòng nhập tên đội trước khi chấm.")
@@ -214,7 +220,7 @@ with tab_grade:
                         st.info(f"Đội **{team_name}** chưa được xếp hạng: cần một bài hợp lệ trên {SPLIT_DISPLAY[rank_split]}.")
                     st.caption(f"Đã lưu vào lịch sử (`{saved['id']}`).")
 
-                    if task in {"vilexnorm", "ghost", "restroom"}:
+                    if task in {"vilexnorm", "ghost", "restroom", "math_ocr", "vietnamese_restoration"}:
                         st.subheader("Metrics phụ")
                         secondary = result["secondary_metrics"]
                         columns = st.columns(3)

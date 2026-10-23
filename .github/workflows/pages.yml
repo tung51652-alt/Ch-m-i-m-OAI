@@ -63,3 +63,16 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify OCR and text restoration on the deployed page
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+          GRADER_PASSWORD: ${{ secrets.GRADER_PASSWORD }}
+        run: |
+          npm install --no-save --no-package-lock playwright@1.64.1
+          npx playwright install --with-deps chromium
+          node scripts/test_sequence_pages.cjs
